@@ -1,0 +1,69 @@
+<!doctype html>
+<html lang="it">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Advanced Web Audio API Playground</title>
+    <link rel="stylesheet" href="./style.css" />
+  </head>
+  <body>
+    <header class="app-header">
+      <h1>Advanced Web Audio API Playground</h1>
+      <div class="header-actions">
+        <button id="audio-toggle" title="Start/Stop Audio">Start Audio</button>
+        <select id="preset-select" title="Select preset">
+          <option value="">— Preset —</option>
+        </select>
+        <button id="preset-load" class="btn" title="Load selected preset">Load</button>
+        <button id="preset-new" class="btn" title="New patch">New</button>
+        <button id="preset-export" class="btn" title="Export current patch">Export</button>
+        <button id="preset-import" class="btn" title="Import patch from file">Import</button>
+        <input id="preset-file" type="file" accept="application/json" class="hidden" title="Import preset JSON" />
+        <span class="hint">Drag modules from the left into the canvas. Click an output, then an input to connect.</span>
+        <div class="zoom-controls" title="Zoom">
+          <button class="btn" id="zoom-out">−</button>
+          <span id="zoom-level">100%</span>
+          <button class="btn" id="zoom-in">+</button>
+          <button class="btn" id="zoom-reset" title="Reset zoom">Reset</button>
+        </div>
+      </div>
+    </header>
+
+    <div class="app">
+      <aside class="palette" id="palette">
+        <h2>Moduli</h2>
+  <div class="palette-item" draggable="true" data-module-type="Oscillator">Oscillator</div>
+  <div class="palette-item" draggable="true" data-module-type="Filter">Filter</div>
+        <div class="palette-item" draggable="true" data-module-type="Gain">Gain</div>
+  <div class="palette-item" draggable="true" data-module-type="Delay">Delay</div>
+  <div class="palette-item" draggable="true" data-module-type="Reverb">Reverb</div>
+  <div class="palette-item" draggable="true" data-module-type="Distortion">Distortion</div>
+  <div class="palette-item" draggable="true" data-module-type="Mixer">Mixer</div>
+  <div class="palette-item" draggable="true" data-module-type="Destination">Destination</div>
+  <hr />
+  <div class="palette-item" draggable="true" data-module-type="LFO">LFO</div>
+  <div class="palette-item" draggable="true" data-module-type="LFOSync">LFO Sync</div>
+  <div class="palette-item" draggable="true" data-module-type="ADSR">ADSR</div>
+  <div class="palette-item" draggable="true" data-module-type="Sequencer">Sequencer</div>
+  <div class="palette-item" draggable="true" data-module-type="Transport">Transport</div>
+  <div class="palette-item" draggable="true" data-module-type="Sampler">Sampler</div>
+      </aside>
+
+      <main class="workspace-wrapper">
+        <div id="workspace" class="workspace" tabindex="0">
+          <div id="zoom-layer" class="zoom-layer">
+            <!-- SVG overlay per cavi -->
+            <svg id="cable-layer" class="cable-layer"></svg>
+            <!-- Moduli creati dinamicamente verranno aggiunti qui -->
+          </div>
+        </div>
+      </main>
+    </div>
+
+    <footer class="app-footer">
+      <span>Example: Oscillator → Filter → Gain → Destination (auto-created)</span>
+    </footer>
+
+    <script type="module" src="./main.js"></script>
+  </body>
+  </html>
