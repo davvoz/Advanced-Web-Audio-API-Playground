@@ -1,91 +1,119 @@
-# Modular Web Audio Synt## Avvio locale
-Usa un server static## Utilizzo
-- Trascina un modulo dal pannello ## Struttura del progetto
-- `index.html` – layout e caricamento script
-- `style.css` – stili per workspace, moduli, porte e cavi
-- `main.js` – gestione drag & drop, cavi, connessioni audio, zoom, preset
-- `modules/` – classe base `module.js` e moduli concreti:
-  - **Audio**: `oscillator.js`, `filter.js`, `gain.js`, `delay.js`, `reverb.js`, `distortion.js`, `mixer.js`, `destination.js`
-  - **Controllo**: `lfo.js`, `lfosync.js`, `adsr.js`, `sequencer.js`, `transport.js`  
-  - **Sampling**: `sampler.js`
-  - **Registry**: `index.js` (registrazione moduli)
+# Modular Web Audio Synthesizer
 
-## Note tecniche
-- L'audio è soggetto alle policy di autoplay: premi "Start Audio"
-- Una sola connessione per input (nuova connessione sostituisce quella esistente)
-- Rimozione cavi: doppio click, punto rosso, o click su input
-- Zoom: range 40%-200%, cavi si adattano automaticamente
-- Solo il Mixer è ridimensionabile (maniglia angolo in basso a destra)
+A modular synthesizer builOpen http://localhost:5173/ and click **"Start Audio"** to enable audio### Project Structure
+```
+├── index.html              # Main HTML layout
+├── style.css               # Global styles for UI components
+├── main.js                 # Core application logic, canvas management, presets
+└── modules/
+    ├── index.js            # Module registry and exports
+    ├── module.js           # Base Module class
+    ├── oscillator.js       # Waveform generator
+    ├── filter.js           # Audio filtering
+    ├── gain.js             # Amplification
+    ├── delay.js            # Echo effect
+    ├── reverb.js           # Convolution reverb
+    ├── distortion.js       # Waveshaper distortion
+    ├── mixer.js            # Multi-channel mixer
+    ├── destination.js      # Audio output
+    ├── lfo.js              # Low-frequency oscillator
+    ├── lfosync.js          # Transport-synced LFO
+    ├── adsr.js             # Envelope generator
+    ├── sequencer.js        # Step sequencer
+    ├── transport.js        # Global clock
+    └── sampler.js          # Audio file playback
+```
 
-**Licenza**: MIT workspace
-- Click su un output (giallo) poi su un input (ciano) per connettere
-- Rimuovi un cavo: doppio click sul cavo, click sul punto rosso, o click sull'input connesso
-- Trascina i moduli per riposizionarli; i cavi si aggiornano automaticamente
-- Per sequenziare note: usa Sequencer + Transport connettendo Transport.clock → Sequencer.clock e Transport.bpm → Sequencer.bpm, poi Start
+## Technical Notes
+- **Audio Context**: Requires user activation - click "Start Audio" button
+- **Connection Rules**: One input per connection (new connections replace existing ones)
+- **Cable Management**: Visual feedback with multiple deletion methods
+- **Zoom Range**: 40%-200% with automatic cable repositioning
+- **Module Resizing**: Currently supported only for Mixer module
 
-### Consigli per il Sampler
-- Carica un file tramite input file o drag-drop sul modulo
-- **Mode**: One-shot si attiva al gate "on"; Gate mode si ferma al gate "off"
-- **Pitch**: connetti Sequencer.pitch → Sampler.pitch e imposta "Root MIDI" alla nota del campione
-- **Tune/Fine**: regolazione fine dell'intonazione in semitoni e cent
-- **Loop**: abilita e regola start/end nei campi numerici o trascinando le maniglie sulla waveform
-- **ADSR**: envelope opzionale per il volume, abilitabile con la checkbox script sono moduli ES6.
+**License**: MIT Basic Usage
+1. **Add modules**: Drag from the left panel into the workspace
+2. **Create connections**: Click an output (yellow) then an input (cyan)
+3. **Remove connections**: Double-click cable, click red dot, or click connected input
+4. **Adjust parameters**: Use sliders, dropdowns, and numeric inputs on modules
+5. **Load presets**: Use the preset dropdown to try different configurations
 
-**Opzione 1 (Python 3)**:
-```powershell
-# dalla cartella del progetto
+### Sequencing Workflow
+1. Add Transport and Sequencer modules
+2. Connect `Transport.clock` → `Sequencer.clock`
+3. Connect `Transport.bpm` → `Sequencer.bpm` 
+4. Connect `Sequencer.pitch` → `Oscillator.freq`
+5. Connect `Sequencer.gate` → `Gain.gain` (or ADSR)
+6. Click "Start" on Transport to begin playback
+
+### Sampler Workflow
+1. **Load audio**: Use file input or drag-drop audio file onto Sampler
+2. **Set root pitch**: Adjust "Root MIDI" to match the original note of your sample
+3. **Connect sequencer**: `Sequencer.pitch` → `Sampler.pitch` for pitched playback
+4. **Configure playback**: 
+   - **One-shot**: Triggers once per gate
+   - **Gate mode**: Plays while gate is high, stops when gate goes low
+5. **Adjust loop**: Enable loop and set start/end points using numeric fields or waveform handles
+6. **Apply envelope**: Enable ADSR for volume shapingTML/CSS/JavaScript using the Web Audio API. Features a drag-and-drop interface for creating audio patches.
+
+## Features
+- **Modular design**: Drag modules into the canvas and connect them with virtual cables
+- **Real audio processing**: Connections map directly to Web Audio API `.connect()`/`.disconnect()` calls
+- **Interactive controls**: Real-time parameter adjustment with sliders, dropdowns, and numeric inputs
+- **Extensible architecture**: Base `Module` class allows easy creation of custom modules
+- **Zoomable canvas**: 40%-200% zoom with mouse wheel, cables adapt automatically
+- **16 built-in presets**: From basic patches to complex sequenced arrangements
+
+## Available Modules
+
+### Sound Generation & Processing
+- **Oscillator**: Sine, square, sawtooth, triangle waveforms with frequency and level control
+- **Filter**: Low-pass, high-pass, band-pass, notch filters with cutoff and Q controls
+- **Gain**: Amplification with level control and CV input
+- **Delay**: Echo effect with time and feedback controls
+- **Reverb**: Convolution reverb with room size and wet/dry mix
+- **Distortion**: Waveshaper distortion with multiple curve types and drive control
+- **Mixer**: Multi-channel mixer with level, pan, mute per channel, compact view options
+- **Destination**: Audio output to speakers
+
+### Modulation & Control
+- **LFO**: Low-frequency oscillator with multiple waveforms, rate, depth, and offset
+- **LFO Sync**: Transport-synchronized LFO with tempo-locked rates
+- **ADSR**: Attack-Decay-Sustain-Release envelope generator with gate input
+- **Sequencer**: 8-step sequencer with note and gate pattern programming
+- **Transport**: Global tempo and clock source for synchronization
+
+### Sampling
+- **Sampler**: Audio file playback with pitch control, loop points, ADSR envelope, and start offset
+
+## User Interface Features
+- **Zoom controls**: Scale from 40% to 200% using buttons or mouse wheel
+- **Cable management**: Delete cables by double-clicking, clicking the red dot, or clicking connected input
+- **Module positioning**: Drag modules freely; cables automatically update positions
+- **Mixer enhancements**: Compact mode, configurable column layout, parameter port visibility toggle
+- **Resizable modules**: Mixer supports dynamic resizing via corner handle
+
+## Built-in Presets
+**Basic Patches**: Simple Bass, Vibrato Pad, Tremolo, Auto Wah, Pluck, Echo Space, Wobble Bass  
+**Sequencer Demos**: Seq Demo, Seq Bassline, Seq Arp Minor, Seq Techno 16th, Seq Staccato, Seq Octaves  
+**Transport Sync**: Seq Transport Sync, ADSR Sequence Pad, ADSR Volume Lead
+
+## Getting Started
+
+### Local Development
+Requires a static server due to ES6 module usage.
+
+**Python 3**:
+```bash
 python -m http.server 5173
 ```
 
-**Opzione 2 (Node.js)**:
-```powershell
+**Node.js**:
+```bash
 npx http-server -p 5173
 ```
 
-Apri: http://localhost:5173/
-
-**Importante**: premi "Start Audio" nella pagina per abilitare l'audio (policy del browser).
-
-## Preset inclusi
-Il sistema include 16 preset preconfigurati:
-- **Base**: Simple Bass, Vibrato Pad, Tremolo, Auto Wah, Pluck, Echo Space, Wobble Bass
-- **Sequencer**: Seq Demo, Seq Bassline, Seq Arp Minor, Seq Techno 16th, Seq Staccato, Seq Octaves
-- **Transport sync**: Seq Transport Sync, ADSR Sequence Pad, ADSR Volume Leadntetizzatore modulare basato su Web Audio API, realizzato in HTML/CSS/JavaScript vanilla con interfaccia drag-and-drop.
-
-## Caratteristiche
-- Trascina moduli nella canvas e connettili con cavi virtuali
-- Le connessioni riflettono reali operazioni `.connect()`/`.disconnect()` dell'API Web Audio
-- Controlli interattivi per parametri (slider, select, campi numerici)
-- Classe base `Module` estendibile per creare nuovi moduli
-- Canvas zoomabile (40%-200%) con scroll e cavi che si adattano automaticamente
-- Sistema di preset con 16 configurazioni predefinite
-
-### Moduli disponibili
-- **Generatori/Processori**: Oscillator, Filter, Gain, Delay, Reverb, Distortion, Mixer, Destination
-- **Modulazione**: LFO (libero), LFO Sync (sincronizzato al Transport), ADSR
-- **Controllo**: Sequencer (8 step), Transport (clock globale)
-- **Campionamento**: Sampler (carica file audio, loop, intonazione, envelope)
-
-### Funzionalità UX
-- Zoom canvas: pulsanti +/- o rotella mouse, range 40%-200%
-- Elimina cavi: doppio click, click sul punto rosso, o click su input già connesso
-- Mixer compatto: modalità compatta, colonne configurabili, nascondi porte parametri
-- Resize: solo il Mixer è ridimensionabile tramite maniglia nell'angolo
-
-## Run locally
-Use a simple static server because scripts are ES modules.
-
-Option 1 (Python 3):
-```powershell
-# from project folder
-python -m http.server 5173
-```
-Open: http://localhost:5173/
-
-Option 2 (Node):
-```powershell
-npx http-server -p 5173
-```
+Open http://localhost:5173/ and click **"Start Audio"** to enable audio output.
 
 In the page, press “Start Audio” to enable audio (browser policy).
 
@@ -102,24 +130,32 @@ In the page, press “Start Audio” to enable audio (browser policy).
 - Pitch: connect Sequencer.pitch → Sampler.pitch and set “Root MIDI” to the note of the sample. Use Tune/Fine for adjustments.
 - Loop: enable, then adjust start/end in the numeric fields or by dragging the handles on the waveform.
 
-## Aggiungere un nuovo modulo
-1. Crea un file in `modules/` estendendo `Module` e implementa:
-   - `get title()` per il titolo del modulo
-   - `buildAudio()` per creare/connettere nodi Web Audio e popolare `this.inputs` e `this.outputs`
-   - `buildControls(container)` per creare i controlli UI
-2. Registra il modulo in `modules/index.js` dentro `ModuleRegistry`
+## Development
 
-Esempio minimale:
+### Adding Custom Modules
+1. Create a new file in `modules/` extending the base `Module` class
+2. Implement required methods:
+   - `get title()` - Returns the module name
+   - `buildAudio()` - Sets up Web Audio nodes and defines `this.inputs`/`this.outputs`
+   - `buildControls(container)` - Creates the UI controls
+3. Register the module in `modules/index.js`
+
+**Example**:
 ```js
 import { Module } from './module.js';
+
 export class MyModule extends Module {
-  get title(){ return 'MyModule'; }
-  buildAudio(){
-    const n = this.audioCtx.createGain();
-    this.inputs = { in: { node: n } };
-    this.outputs = { out: { node: n } };
+  get title() { return 'My Module'; }
+  
+  buildAudio() {
+    const gain = this.audioCtx.createGain();
+    this.inputs = { in: { node: gain } };
+    this.outputs = { out: { node: gain } };
   }
-  buildControls(container){ /* UI */ }
+  
+  buildControls(container) {
+    // Add UI controls here
+  }
 }
 ```
 
