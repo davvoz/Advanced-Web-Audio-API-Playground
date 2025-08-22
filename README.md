@@ -1,4 +1,4 @@
-# Web Audio API Modular Playground
+# Advanced Web Audio API Playground
 
 A modular audio synthesis playground built with vanilla HTML/CSS/JavaScript and the Web Audio API. Create patches by dragging modules onto a canvas and connecting them with virtual cables.
 
