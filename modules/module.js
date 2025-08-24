@@ -16,9 +16,10 @@ export class Module {
         this.outputs = {}; // name -> { node }
 
         this.root = this._createRoot();
-        this.workspace.appendChild(this.root);
-        this.setPosition(position.x, position.y);
-        this._enableDragging();
+    this.workspace.appendChild(this.root);
+    this.setPosition(position.x, position.y);
+    this._enableDragging();
+    this._enableResize();
     }
 
     // To override in subclasses
@@ -30,10 +31,11 @@ export class Module {
         const el = document.createElement('div');
         el.className = 'module';
         el.setAttribute('data-module-id', this.id);
-        el.innerHTML = `
+                        el.innerHTML = `
       <div class="module-header">
         <div class="module-title">${this.title}</div>
         <div class="module-actions">
+                    <input type="color" class="color-picker" title="Background color" />
       <button class="btn danger btn-remove" title="Remove">✕</button>
         </div>
       </div>
@@ -47,10 +49,28 @@ export class Module {
           <div class="port-list out-ports"></div>
         </div>
       </div>
-      <div class="controls"></div>
+            <div class="controls"></div>
+            <div class="resize-handle" title="Resize"></div>
     `;
         // actions
         el.querySelector('.btn-remove').addEventListener('click', () => this.onRemove?.(this.id));
+        const colorInput = el.querySelector('.color-picker');
+        const toHex = (rgbStr) => {
+            if (!rgbStr) return null;
+            const m = rgbStr.match(/rgba?\((\d+),\s*(\d+),\s*(\d+)/i);
+            if (!m) return null;
+            const r = Number(m[1]).toString(16).padStart(2,'0');
+            const g = Number(m[2]).toString(16).padStart(2,'0');
+            const b = Number(m[3]).toString(16).padStart(2,'0');
+            return `#${r}${g}${b}`;
+        };
+        const cs = getComputedStyle(el);
+        const initial = toHex(cs.backgroundColor) || '#11162b';
+        colorInput.value = initial;
+        this._bg = initial;
+        colorInput.addEventListener('input', () => {
+            this.setBackgroundColor(colorInput.value);
+        });
 
         this.inPortsEl = el.querySelector('.in-ports');
         this.outPortsEl = el.querySelector('.out-ports');
@@ -59,7 +79,7 @@ export class Module {
         // Make root available to subclasses during build
         this.root = el;
 
-        this.buildAudio();
+    this.buildAudio();
         this._renderPorts();
         this.buildControls(this.controlsEl);
         return el;
@@ -98,7 +118,7 @@ export class Module {
     _enableDragging() {
         let startX, startY, origX, origY;
         const onMouseDown = (e) => {
-            if (e.target.closest('.controls') || e.target.closest('.port') || e.target.closest('.resize-handle')) return; // avoid drag when using controls, ports, or resize handle
+            if (e.target.closest('.controls') || e.target.closest('.port') || e.target.closest('.resize-handle') || e.target.closest('.module-actions')) return; // avoid drag when using controls, ports, resize, or header actions
             e.preventDefault();
             this.root.classList.add('dragging');
             startX = e.clientX; startY = e.clientY;
@@ -121,7 +141,53 @@ export class Module {
         this.root.addEventListener('mousedown', onMouseDown);
     }
 
+    _enableResize() {
+        const handle = this.root.querySelector('.resize-handle');
+        if (!handle) return;
+        let startX, startY, startW, startH;
+        const onDown = (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            const rect = this.root.getBoundingClientRect();
+            startX = e.clientX; startY = e.clientY;
+            const z = this.getZoom();
+            startW = rect.width / z; startH = rect.height / z;
+            document.body.style.cursor = 'nwse-resize';
+            window.addEventListener('mousemove', onMove);
+            window.addEventListener('mouseup', onUp, { once: true });
+        };
+        const px = (v) => `${Math.round(v)}px`;
+        const onMove = (e) => {
+            const z = this.getZoom();
+            const dx = (e.clientX - startX) / z;
+            const dy = (e.clientY - startY) / z;
+            // clamp using CSS min/max if available
+            const cs = getComputedStyle(this.root);
+            const minW = parseFloat(cs.minWidth) || 180;
+            const maxW = parseFloat(cs.maxWidth) || 1200;
+            const minH = 120; // reasonable default
+            const maxH = 1600;
+            const w = Math.min(maxW, Math.max(minW, startW + dx));
+            const h = Math.min(maxH, Math.max(minH, startH + dy));
+            this.root.style.width = px(w);
+            this.root.style.height = px(h);
+            this.onMove?.(this.id); // update cables while resizing
+        };
+        const onUp = () => {
+            window.removeEventListener('mousemove', onMove);
+            document.body.style.cursor = '';
+            this.onMove?.(this.id);
+        };
+        handle.addEventListener('mousedown', onDown);
+    }
+
     onAudioStateChange() { }
+
+    setBackgroundColor(color) {
+        this._bg = color;
+        if (this.root) this.root.style.background = color;
+    }
+    getBgColor() { return this._bg; }
 
     dispose() {
         this.root.remove();

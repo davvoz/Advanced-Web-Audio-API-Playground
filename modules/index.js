@@ -13,8 +13,12 @@ import { ADSRModule } from './adsr.js';
 import { SequencerModule } from './sequencer.js';
 import { TransportModule } from './transport.js';
 import { SamplerModule } from './sampler.js';
+import { LooperModule } from './looper.js';
+import { TB303Module } from './tb303.js';
+import { TB303SequencerModule } from './tb303-sequencer.js';
+import { DrumStationModule } from './drum-station.js';
 
-export { Module, OscillatorModule, FilterModule, GainModule, DelayModule, ReverbModule, DistortionModule, MixerModule, DestinationModule, LFOModule, LFOSyncModule, ADSRModule, SequencerModule, TransportModule, SamplerModule };
+export { Module, OscillatorModule, FilterModule, GainModule, DelayModule, ReverbModule, DistortionModule, MixerModule, DestinationModule, LFOModule, LFOSyncModule, ADSRModule, SequencerModule, TransportModule, SamplerModule, LooperModule, TB303Module, TB303SequencerModule, DrumStationModule };
 
 export const ModuleRegistry = {
   Oscillator: OscillatorModule,
@@ -31,4 +35,12 @@ export const ModuleRegistry = {
   Sequencer: SequencerModule,
   Transport: TransportModule,
   Sampler: SamplerModule,
+  Looper: LooperModule,
+  TB303: TB303Module,
+  TB303Seq: TB303SequencerModule,
+  DrumStation: DrumStationModule,
+  // Aliases for constructor-based names used in exported patches
+  TB303: TB303Module,
+  TB303Sequencer: TB303SequencerModule,
+  DrumStation: DrumStationModule,
 };

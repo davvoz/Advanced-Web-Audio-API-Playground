@@ -1,5 +1,8 @@
 import { Module } from './module.js';
 
+// Reasonable upper bound to keep UI responsive; can be raised if needed
+const MAX_STEPS = 128;
+
 const NOTE_NAMES = ['C','C#','D','D#','E','F','F#','G','G#','A','A#','B'];
 const midiToHz = (m) => 440 * Math.pow(2, (m - 69) / 12);
 const noteNameToMidi = (name) => {
@@ -65,25 +68,25 @@ export class SequencerModule extends Module {
 
   buildControls(container) {
   this.root.classList.add('module-sequencer');
-  // add resize handle
-  const rh = document.createElement('div');
-  rh.className = 'resize-handle';
-  this.root.appendChild(rh);
-  this._enableResize(rh);
   // No internal transport or tempo; Sequencer follows external Transport
 
     // Steps and gate
     const stepsCtl = document.createElement('div');
     stepsCtl.className = 'control';
-    stepsCtl.innerHTML = `
+  stepsCtl.innerHTML = `
       <label>Steps / Gate</label>
       <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;">
-        <div><small>Steps</small><input type="number" min="1" max="16" step="1" value="8" /></div>
+    <div><small>Steps</small><input type="number" min="1" max="${MAX_STEPS}" step="1" value="${this.steps}" /></div>
         <div><small>Gate (%)</small><input type="range" min="0" max="1" step="0.01" value="0.5" /></div>
       </div>
     `;
     const stepsNum = stepsCtl.querySelector('input[type=number]');
     const gateRange = stepsCtl.querySelector('input[type=range]');
+  // sync UI with current state
+  stepsNum.value = String(this.steps);
+  gateRange.value = String(this.gateLen);
+  this._stepsNum = stepsNum;
+  this._gateRange = gateRange;
     stepsNum.addEventListener('input', () => this.setSteps(Number(stepsNum.value)));
     gateRange.addEventListener('input', () => this.gateLen = Number(gateRange.value));
 
@@ -103,7 +106,8 @@ export class SequencerModule extends Module {
   }
 
   _renderGrid() {
-    const { opts } = buildNoteOptions(2,6,48);
+    // Expand selectable range to go lower (C-1 .. B6)
+    const { opts } = buildNoteOptions(-1,6,48);
   if (!this.gridBody) return;
   // scale step width: ensure readability, use CSS var and fixed min width per step
   this.gridBody.parentElement.parentElement.style.setProperty('--seq-steps', this.steps);
@@ -131,13 +135,14 @@ export class SequencerModule extends Module {
   }
 
   setSteps(n) {
-    this.steps = Math.max(1, Math.min(16, n|0));
+    this.steps = Math.max(1, Math.min(MAX_STEPS, n|0));
     if (this.pattern.length < this.steps) {
       const add = Array.from({ length: this.steps - this.pattern.length }, () => ({ on: false, midi: 48 }));
       this.pattern = this.pattern.concat(add);
     } else if (this.pattern.length > this.steps) {
       this.pattern.length = this.steps;
     }
+    if (this._stepsNum) this._stepsNum.value = String(this.steps);
     this._renderGrid();
   }
 
@@ -221,30 +226,7 @@ export class SequencerModule extends Module {
   subscribePitch(id, cb) { this._pitchSubs.set(id, cb); }
   unsubscribePitch(id) { this._pitchSubs.delete(id); }
 
-  _enableResize(handle) {
-    let startX, startWidth;
-    const onDown = (e) => {
-      e.preventDefault();
-      e.stopPropagation();
-      const rect = this.root.getBoundingClientRect();
-      startX = e.clientX;
-      startWidth = rect.width;
-      window.addEventListener('mousemove', onMove, { passive: true });
-      window.addEventListener('mouseup', onUp, { once: true });
-    };
-    const onMove = (e) => {
-      e.preventDefault();
-      e.stopPropagation();
-      const dx = e.clientX - startX;
-      const w = Math.min(1000, Math.max(420, startWidth + dx));
-      this.root.style.width = `${w}px`;
-      this.onMove?.(this.id);
-    };
-    const onUp = () => {
-      window.removeEventListener('mousemove', onMove);
-    };
-    handle.addEventListener('mousedown', onDown);
-  }
+  // Resizing handled by base Module now
 
   dispose() {
     super.dispose();
@@ -260,6 +242,8 @@ export class SequencerModule extends Module {
     if (typeof state.steps === 'number') this.setSteps(state.steps);
     if (typeof state.gateLen === 'number') this.gateLen = state.gateLen;
     if (Array.isArray(state.pattern)) this.pattern = state.pattern.map(s => ({ on: !!s.on, midi: Number(s.midi)||48 }));
+  if (this._stepsNum) this._stepsNum.value = String(this.steps);
+  if (this._gateRange) this._gateRange.value = String(this.gateLen);
     if (this.gridBody) this._renderGrid();
   }
 }

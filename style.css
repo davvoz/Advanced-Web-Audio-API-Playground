@@ -210,6 +210,17 @@ body {
     gap: 6px
 }
 
+.module .module-actions .color-picker {
+    appearance: none;
+    width: 22px;
+    height: 22px;
+    padding: 0;
+    border: 1px solid #2c3669;
+    border-radius: 4px;
+    background: transparent;
+    cursor: pointer;
+}
+
 .btn {
     background: #1b2244;
     color: #dfe6ff;
@@ -375,3 +386,7 @@ body {
     align-items: center;
     margin-left: 12px
 }
+
+/* Looper */
+.module.module-looper .control label { display:block; margin:8px 0 4px; }
+.module.module-looper canvas[data-role=wave] { -webkit-user-select:none; user-select:none; cursor:crosshair; }
