@@ -517,6 +517,36 @@ const BuiltinPresets = {
         ]
     }
     ,
+    'Sidechain Duck': {
+        modules: [
+            { type: 'Oscillator', x: 120, y: 80, state: { type: 'sawtooth', freq: 220, level: 0.35 } },
+            { type: 'Gain', x: 420, y: 120, state: { gain: 0.9 } },
+            { type: 'Sidechain', x: 720, y: 160, state: { threshold: 0.25, amount: 0.8, attack: 0.01, release: 0.25 } },
+            { type: 'Destination', x: 1040, y: 200, state: { level: 0.9 } },
+            // Kick as sidechain source: short oscillator burst
+            { type: 'Oscillator', x: 120, y: 260, state: { type: 'sine', freq: 60, level: 0.0 } },
+            { type: 'ADSR', x: 420, y: 260, state: { A: 0.001, D: 0.1, S: 0, R: 0.12, depth: 1 } },
+            { type: 'Transport', x: 80, y: 60, state: { bpm: 120, running: true } },
+            { type: 'Sequencer', x: 140, y: 360, state: { steps: 8, gateLen: 0.1, running: true, pattern: [
+                { on: true, midi: 36 }, { on: false, midi: 36 }, { on: false, midi: 36 }, { on: false, midi: 36 },
+                { on: true, midi: 36 }, { on: false, midi: 36 }, { on: false, midi: 36 }, { on: false, midi: 36 }
+            ] } },
+        ],
+        connections: [
+            // Pad path
+            { from: ['Oscillator','out'], to: ['Gain','in'] },
+            { from: ['Gain','out'], to: ['Sidechain','in'] },
+            { from: ['Sidechain','out'], to: ['Destination','in'] },
+            // Kick synth to sidechain input (we don't route it to Destination by default)
+            { from: ['Sequencer','gate'], to: ['ADSR','gate'] },
+            { from: ['Sequencer','pitch'], to: ['Oscillator','freq'] },
+            { from: ['ADSR','out'], to: ['Oscillator','level'] },
+            { from: ['Oscillator','out'], to: ['Sidechain','sidechain'] },
+            // Transport sync
+            { from: ['Transport','clock'], to: ['Sequencer','clock'] },
+            { from: ['Transport','bpm'], to: ['Sequencer','bpm'] },
+        ]
+    },
     'Seq Demo': {
         modules: [
             {
