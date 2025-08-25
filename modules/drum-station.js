@@ -61,14 +61,24 @@ export class DrumStationModule extends Module {
         <button class="btn" data-role="stop">Stop All</button>
       </div>`;
     container.appendChild(head);
-    const masterEl = head.querySelector('[data-role=master]');
-    const stepsEl = head.querySelector('[data-role=steps]');
+  const masterEl = head.querySelector('[data-role=master]');
+  const stepsEl = head.querySelector('[data-role=steps]');
     const velEl = head.querySelector('[data-role=vel]');
     head.querySelector('[data-role=clear]').addEventListener('click', () => { this._pattern.forEach(r=>r.fill(false)); this._accent.forEach(r=>r.fill(false)); this._renderGrid(); });
     head.querySelector('[data-role=stop]').addEventListener('click', () => this._stopAll());
     masterEl.addEventListener('input', () => this._out.gain.setTargetAtTime(Number(masterEl.value), this.audioCtx.currentTime, 0.01));
     stepsEl.addEventListener('input', () => { this._steps = clamp(Number(stepsEl.value)||16,1,64); this._pattern.forEach(r => { if (r.length < this._steps) r.push(...Array(this._steps - r.length).fill(false)); r.length = this._steps; }); this._accent.forEach(r => { if (r.length < this._steps) r.push(...Array(this._steps - r.length).fill(false)); r.length = this._steps; }); this._renderGrid(); });
     velEl.addEventListener('input', () => { this._velocity = clamp(Number(velEl.value)||1, 0.1, 1.5); });
+  // store stepsEl for programmatic updates
+  this._stepsEl = stepsEl;
+
+  // Duplicate button
+  const dupBtn = document.createElement('button');
+  dupBtn.className = 'btn';
+  dupBtn.textContent = 'Duplicate';
+  dupBtn.title = 'Duplicate pattern to double length (up to 64)';
+  head.querySelector('div')?.appendChild(dupBtn);
+  dupBtn.addEventListener('click', () => this._duplicatePattern());
 
     // Grid
     const gridWrap = document.createElement('div'); gridWrap.className = 'control';
@@ -124,6 +134,28 @@ export class DrumStationModule extends Module {
       pan.addEventListener('input', () => { s.panVal = Number(pan.value); if (s.pan) s.pan.pan.setTargetAtTime(s.panVal, this.audioCtx.currentTime, 0.01); });
       trig.addEventListener('click', () => this._trigger(idx, 1));
     });
+  }
+
+  _duplicatePattern() {
+    const cur = this._steps|0;
+    if (cur <= 0) return;
+    if (cur >= 64) return; // already at max
+    const target = Math.min(64, cur * 2);
+    const copyLen = Math.min(cur, target - cur);
+    for (let r = 0; r < this._pattern.length; r++) {
+      const row = this._pattern[r].slice(0, cur);
+      const rowAcc = this._accent[r].slice(0, cur);
+      const extra = row.slice(0, copyLen);
+      const extraAcc = rowAcc.slice(0, copyLen);
+      const next = row.concat(extra);
+      const nextAcc = rowAcc.concat(extraAcc);
+      next.length = target; nextAcc.length = target;
+      this._pattern[r] = next;
+      this._accent[r] = nextAcc;
+    }
+    this._steps = target;
+    if (this._stepsEl) this._stepsEl.value = String(this._steps);
+    this._renderGrid();
   }
 
   _renderGrid() {

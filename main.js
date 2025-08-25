@@ -29,6 +29,8 @@ const presetNewBtn = document.getElementById('preset-new');
 const presetExportBtn = document.getElementById('preset-export');
 const presetImportBtn = document.getElementById('preset-import');
 const presetFileInput = document.getElementById('preset-file');
+const speakerWarning = document.getElementById('speaker-warning');
+const warnDismissBtn = document.getElementById('warn-dismiss');
 
 // State
 const modules = new Map(); // id -> module instance
@@ -382,6 +384,8 @@ function createExample() {
 // Initialize
 window.addEventListener('DOMContentLoaded', () => {
     setButtonRunning(false);
+    // Warning banner dismiss
+    warnDismissBtn?.addEventListener('click', () => speakerWarning?.remove());
     // ensure SVG proper size
     const resize = () => {
         const r = zoomLayer.getBoundingClientRect();
@@ -400,6 +404,15 @@ window.addEventListener('DOMContentLoaded', () => {
 
 // Presets
 const BuiltinPresets = {
+    'FM Simple Bell': {
+        modules: [
+            { type: 'FM', x: 220, y: 100, state: { car: { type: 'sine', freq: 440 }, mod: { type: 'sine', freq: 660 }, index: 600, level: 0.5 } },
+            { type: 'Destination', x: 560, y: 180, state: { level: 0.9 } },
+        ],
+        connections: [
+            { from: ['FM','out'], to: ['Destination','in'] }
+        ]
+    },
     'Simple Bass': {
         modules: [
             { type: 'Oscillator', x: 180, y: 90, state: { type: 'square', freq: 55, level: 0.4 } },
@@ -866,7 +879,85 @@ function exportPatch() {
     return { version: 2, modules: list, connections: conns };
 }
 
+function preprocessPreset(preset) {
+    // Return a shallow-cloned preset with TB-303 Seq merged into TB-303
+    if (!preset) return preset;
+    const clone = { modules: (preset.modules || []).map(m => ({ ...m, state: { ...(m.state || {}) } })), connections: (preset.connections || []).map(c => Array.isArray(c) ? [...c] : { ...c }) };
+
+    const isV2 = !!preset?.version || (Array.isArray(preset?.connections) && preset.connections.some(c => c?.from?.moduleId));
+    const isSeqType = (t) => t === 'TB-303 Seq' || t === 'TB303Seq' || t === 'TB303Sequencer';
+
+    if (!isV2) {
+        // v1 conversion using type strings
+        const seqMods = clone.modules.filter(m => isSeqType(m.type));
+        if (seqMods.length === 0) return clone;
+        // Map of seq type strings for quick check
+        const seqTypeSet = new Set(['TB-303 Seq','TB303Seq','TB303Sequencer']);
+        // For each seq module, find a TB-303 it was driving and migrate state
+        seqMods.forEach(seq => {
+            // Try to find TB-303 target from connections
+            const toPairs = clone.connections.filter(c => Array.isArray(c.from) ? (c.from[0] === seq.type && c.from[1] === 'pitch') : false);
+            const toTB = toPairs.map(c => c.to && c.to[0]).find(t => t === 'TB-303' || t === 'TB303');
+            const tbMod = clone.modules.find(m => m.type === (toTB || 'TB-303'));
+            if (tbMod) {
+                // Move sequencer state into TB-303
+                const s = seq.state || {};
+                tbMod.state = tbMod.state || {};
+                tbMod.state.sequencer = { steps: s.steps || 16, rootMidi: s.rootMidi || 48, gatePct: s.gatePct || 55, pattern: Array.isArray(s.pattern) ? s.pattern : [] };
+            }
+            // If Transport was feeding clock to seq, mirror to TB-303
+            clone.connections.forEach((c) => {
+                if (Array.isArray(c.from) && Array.isArray(c.to) && c.to[0] === seq.type && c.to[1] === 'clock') {
+                    // Rewire to TB-303 clock
+                    c.to = ['TB-303', 'clock'];
+                }
+            });
+        });
+        // Remove all connections involving seq modules
+        clone.connections = clone.connections.filter(c => !(Array.isArray(c.from) && seqTypeSet.has(c.from[0])) && !(Array.isArray(c.to) && seqTypeSet.has(c.to[0])));
+        // Ensure at least one Transport->TB-303 clock connection exists if any Transport present
+        const hasTransport = clone.modules.some(m => m.type === 'Transport');
+        const hasTB = clone.modules.some(m => m.type === 'TB-303' || m.type === 'TB303');
+        const hasClockConn = clone.connections.some(c => Array.isArray(c.from) && Array.isArray(c.to) && c.from[0] === 'Transport' && c.from[1] === 'clock' && (c.to[0] === 'TB-303' || c.to[0] === 'TB303') && c.to[1] === 'clock');
+        if (hasTransport && hasTB && !hasClockConn) {
+            clone.connections.push({ from: ['Transport','clock'], to: ['TB-303','clock'] });
+        }
+        // Drop seq modules from list
+        clone.modules = clone.modules.filter(m => !isSeqType(m.type));
+        return clone;
+    }
+
+    // v2 id-based format
+    const toRemoveIds = new Set();
+    const byId = new Map(clone.modules.map(m => [m.id, m]));
+    clone.modules.forEach(m => {
+        if (!isSeqType(m.type)) return;
+        // Find TB-303 target by connection from this module's pitch
+        const toTBConn = clone.connections.find(c => c?.from?.moduleId === m.id && c?.from?.port === 'pitch');
+        const tbMod = byId.get(toTBConn?.to?.moduleId);
+        if (tbMod && (tbMod.type === 'TB-303' || tbMod.type === 'TB303')) {
+            const s = m.state || {};
+            tbMod.state = tbMod.state || {};
+            tbMod.state.sequencer = { steps: s.steps || 16, rootMidi: s.rootMidi || 48, gatePct: s.gatePct || 55, pattern: Array.isArray(s.pattern) ? s.pattern : [] };
+        }
+        // Rewire any Transport->seq clock to TB-303 clock
+        clone.connections.forEach(c => {
+            if (c?.to?.moduleId === m.id && c?.to?.port === 'clock' && tbMod) {
+                c.to = { moduleId: tbMod.id, port: 'clock' };
+            }
+        });
+        toRemoveIds.add(m.id);
+    });
+    // Remove all connections involving removed ids
+    clone.connections = clone.connections.filter(c => !(c?.from?.moduleId && toRemoveIds.has(c.from.moduleId)) && !(c?.to?.moduleId && toRemoveIds.has(c.to.moduleId)));
+    // Remove modules
+    clone.modules = clone.modules.filter(m => !toRemoveIds.has(m.id));
+    clone.version = 2; // normalize
+    return clone;
+}
+
 function loadPreset(preset) {
+    preset = preprocessPreset(preset);
     clearWorkspace();
 
     // detect v2 format (id-based)
@@ -876,7 +967,7 @@ function loadPreset(preset) {
     const idToInst = new Map();
 
         // create modules, preserving id if present; skip unknown types safely
-        (preset.modules || []).forEach(m => {
+    (preset.modules || []).forEach(m => {
                     const inst = createModule(m.type, { x: m.x, y: m.y }, { id: m.id });
                     if (!inst) { console.warn('Skipping unknown module type in preset:', m.type); return; }
                     // load module state

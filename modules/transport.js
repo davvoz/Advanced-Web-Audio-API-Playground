@@ -5,30 +5,29 @@ export class TransportModule extends Module {
 
   buildAudio() {
     const ctx = this.audioCtx;
-    // Outputs as ConstantSource for easy connection to params
-    this.bpm = 120;
-    this.ppqn = 4; // 16th
-    this.running = false;
-    this.clock = ctx.createConstantSource(); // pulse 0/1
-    this.clock.offset.value = 0;
-    this.clock.start();
-    this.beat = ctx.createConstantSource(); // 1 on beat, else 0
-    this.beat.offset.value = 0;
-    this.beat.start();
-    this.bpmOut = ctx.createConstantSource(); // emits BPM as value
-    this.bpmOut.offset.value = this.bpm;
-    this.bpmOut.start();
+  // State
+  this.bpm = 120;
+  this.ppqn = 4; // 16th
+  this.running = false;
 
-    this.outputs = {
-      clock: { node: this.clock },
-      beat: { node: this.beat },
-      bpm: { node: this.bpmOut },
-    };
-    this.inputs = {
-      bpm: { param: this.bpmOut.offset },
-      run: { param: null },
-    };
-  this._subs = new Map(); // id -> callback
+  // Outputs as ConstantSource for easy connection to params
+  this.clock = ctx.createConstantSource(); // pulse 0/1 (for visuals)
+  this.clock.offset.value = 0; this.clock.start();
+  this.beat = ctx.createConstantSource(); // 1 on beat, else 0
+  this.beat.offset.value = 0; this.beat.start();
+  this.bpmOut = ctx.createConstantSource(); // emits BPM as value
+  this.bpmOut.offset.value = this.bpm; this.bpmOut.start();
+
+  this.outputs = { clock: { node: this.clock }, beat: { node: this.beat }, bpm: { node: this.bpmOut } };
+  this.inputs = { bpm: { param: this.bpmOut.offset }, run: { param: null } };
+
+  // Subscribers and scheduler
+  this._subs = new Map(); // id -> (evt) => void
+  this._timerId = null;
+  this._nextTickTime = 0;
+  this._tickIndex = 0;
+  this._lookaheadMs = 25;        // how often to check
+  this._scheduleAheadSec = 0.1;  // how far ahead to schedule
   }
 
   buildControls(container) {
@@ -63,38 +62,45 @@ export class TransportModule extends Module {
     container.appendChild(tempoCtl);
   }
 
-  _tickOnce() {
-    const now = this.audioCtx.currentTime;
-    // clock short pulse
-    this.clock.offset.setValueAtTime(1, now);
-    this.clock.offset.setTargetAtTime(0, now + 0.005, 0.005);
-    // beat every quarter note
-    const spb = 60 / this.bpm; // seconds per beat
-    const stepDur = spb / this.ppqn;
-    const stepIdx = Math.floor(this._counter % this.ppqn);
-    if (stepIdx === 0) {
-      this.beat.offset.setValueAtTime(1, now);
-      this.beat.offset.setTargetAtTime(0, now + 0.01, 0.01);
+  _scheduler() {
+    if (!this.running) return;
+    const ctx = this.audioCtx;
+    const spb = 60 / this.bpm;
+    const secPerTick = spb / this.ppqn; // 16th
+    const ahead = ctx.currentTime + this._scheduleAheadSec;
+
+    while (this._nextTickTime < ahead) {
+      // Schedule visual pulses (clock/beat) at the exact time
+      const t = this._nextTickTime;
+      this.clock.offset.setValueAtTime(1, t);
+      this.clock.offset.setValueAtTime(0, t + 0.002);
+      if (this._tickIndex % this.ppqn === 0) {
+        this.beat.offset.setValueAtTime(1, t);
+        this.beat.offset.setValueAtTime(0, t + 0.005);
+      }
+      // Notify subscribers with timing info
+      const evt = { time: t, bpm: this.bpm, ppqn: this.ppqn, tick: this._tickIndex };
+      this._subs.forEach(cb => { try { cb(evt); } catch {} });
+
+      this._tickIndex += 1;
+      this._nextTickTime += secPerTick;
     }
-    this._counter++;
-    // notify subscribers
-    this._subs.forEach(cb => {
-      try { cb(); } catch {}
-    });
-    this._timer = setTimeout(() => this._tickOnce(), stepDur * 1000);
   }
 
   start() {
-    if (this.running) return;
-    this.running = true;
-    this._counter = 0;
-    this._tickOnce();
-    // inform downstream sequencers via connections (optional: future)
+  if (this.running) return;
+  this.running = true;
+  const now = this.audioCtx.currentTime;
+  this._tickIndex = 0;
+  this._nextTickTime = now + 0.05; // slight offset to start
+  if (this._timerId) clearInterval(this._timerId);
+  this._timerId = setInterval(() => this._scheduler(), this._lookaheadMs);
   }
 
   stop() {
-    this.running = false;
-    if (this._timer) clearTimeout(this._timer);
+  this.running = false;
+  if (this._timerId) clearInterval(this._timerId);
+  this._timerId = null;
     const now = this.audioCtx.currentTime;
     this.clock.offset.setTargetAtTime(0, now, 0.01);
     this.beat.offset.setTargetAtTime(0, now, 0.01);

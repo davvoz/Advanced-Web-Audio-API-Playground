@@ -4,7 +4,13 @@ import { Module } from './module.js';
 const MAX_STEPS = 128;
 
 const NOTE_NAMES = ['C','C#','D','D#','E','F','F#','G','G#','A','A#','B'];
+const clamp = (v,a,b) => Math.max(a, Math.min(b, v));
 const midiToHz = (m) => 440 * Math.pow(2, (m - 69) / 12);
+const midiToName = (m) => {
+  const idx = ((m % 12) + 12) % 12;
+  const oct = Math.floor(m / 12) - 1;
+  return `${NOTE_NAMES[idx]}${oct}`;
+};
 const noteNameToMidi = (name) => {
   // name like C#4
   const m = name.match(/^([A-G]#?)(-?\d)$/);
@@ -74,7 +80,10 @@ export class SequencerModule extends Module {
     const stepsCtl = document.createElement('div');
     stepsCtl.className = 'control';
   stepsCtl.innerHTML = `
-      <label>Steps / Gate</label>
+      <label style="display:flex;align-items:center;justify-content:space-between;gap:8px;">
+        <span>Steps / Gate</span>
+        <button class="btn" data-role="expand">Expand</button>
+      </label>
       <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;">
     <div><small>Steps</small><input type="number" min="1" max="${MAX_STEPS}" step="1" value="${this.steps}" /></div>
         <div><small>Gate (%)</small><input type="range" min="0" max="1" step="0.01" value="0.5" /></div>
@@ -90,6 +99,9 @@ export class SequencerModule extends Module {
     stepsNum.addEventListener('input', () => this.setSteps(Number(stepsNum.value)));
     gateRange.addEventListener('input', () => this.gateLen = Number(gateRange.value));
 
+  // Fullscreen editor button
+  stepsCtl.querySelector('[data-role=expand]')?.addEventListener('click', () => this._openFullscreenEditor());
+
     // Pattern grid
     const grid = document.createElement('div');
     grid.className = 'control';
@@ -103,6 +115,220 @@ export class SequencerModule extends Module {
 
     container.appendChild(stepsCtl);
     container.appendChild(grid);
+  }
+
+  _openFullscreenEditor() {
+    const closeModal = () => {
+      backdrop.remove();
+      // re-render small grid to reflect changes
+      if (this.gridBody) this._renderGrid();
+    };
+    const backdrop = document.createElement('div');
+    backdrop.className = 'modal-backdrop';
+    const panel = document.createElement('div');
+    panel.className = 'modal-panel';
+    panel.innerHTML = `
+      <div class="modal-header">
+        <div class="title">Sequencer – Fullscreen Editor</div>
+        <button class="btn" data-role="close">Close</button>
+      </div>
+      <div class="modal-content"></div>
+    `;
+    const content = panel.querySelector('.modal-content');
+    const controls = document.createElement('div');
+    controls.className = 'control';
+    controls.innerHTML = `
+      <div style="display:grid;grid-template-columns: repeat(12, minmax(90px, auto)); gap:10px; align-items:center;">
+        <div><small>Steps</small><input data-role="fs-steps" type="number" min="1" max="${MAX_STEPS}" step="1" value="${this.steps}" /></div>
+        <div><small>Gate (%)</small><input data-role="fs-gate" type="range" min="0" max="1" step="0.01" value="${this.gateLen}" /></div>
+        <div style="display:flex; gap:6px; flex-wrap:wrap;">
+          <button class="btn" data-role="fs-clear">Clear</button>
+          <button class="btn" data-role="fs-shift-left">Shift ◀</button>
+          <button class="btn" data-role="fs-shift-right">Shift ▶</button>
+          <button class="btn" data-role="fs-tr-down">Tr -1</button>
+          <button class="btn" data-role="fs-tr-up">Tr +1</button>
+          <button class="btn" data-role="fs-oct-down">Oct -1</button>
+          <button class="btn" data-role="fs-oct-up">Oct +1</button>
+          <button class="btn" data-role="fs-random">Random</button>
+        </div>
+        <div style="display:flex;align-items:center;gap:6px;">
+          <small>View</small>
+          <div style="display:inline-flex;gap:6px;">
+            <button class="btn" data-role="view-classic">Classic</button>
+            <button class="btn" data-role="view-quick">Quick Edit</button>
+          </div>
+        </div>
+      </div>
+    `;
+    const gridWrap = document.createElement('div');
+  gridWrap.className = 'control';
+  gridWrap.innerHTML = `<div class="seq-grid-wrap"><div class="seq-grid" data-role="fs-grid"></div></div>`;
+    const fsGrid = gridWrap.querySelector('[data-role=fs-grid]');
+
+    content.appendChild(controls);
+    content.appendChild(gridWrap);
+    backdrop.appendChild(panel);
+    document.body.appendChild(backdrop);
+  const onClose = () => closeModal();
+  panel.querySelector('[data-role=close]')?.addEventListener('click', onClose);
+  backdrop.addEventListener('click', (e) => { if (e.target === backdrop) onClose(); });
+  const escHandler = (e) => { if (e.key === 'Escape') { onClose(); document.removeEventListener('keydown', escHandler); } };
+  document.addEventListener('keydown', escHandler);
+
+    // Bind fullscreen controls
+    const fsSteps = controls.querySelector('[data-role=fs-steps]');
+    const fsGate = controls.querySelector('[data-role=fs-gate]');
+    const fsClear = controls.querySelector('[data-role=fs-clear]');
+  const fsShiftL = controls.querySelector('[data-role=fs-shift-left]');
+  const fsShiftR = controls.querySelector('[data-role=fs-shift-right]');
+  const fsTrDn = controls.querySelector('[data-role=fs-tr-down]');
+  const fsTrUp = controls.querySelector('[data-role=fs-tr-up]');
+  const fsOctDn = controls.querySelector('[data-role=fs-oct-down]');
+  const fsOctUp = controls.querySelector('[data-role=fs-oct-up]');
+  const fsRandom = controls.querySelector('[data-role=fs-random]');
+    const viewClassic = controls.querySelector('[data-role=view-classic]');
+    const viewQuick = controls.querySelector('[data-role=view-quick]');
+    fsSteps.addEventListener('input', () => this.setSteps(Number(fsSteps.value)));
+    fsGate.addEventListener('input', () => this.gateLen = Number(fsGate.value));
+  fsClear.addEventListener('click', () => { this.pattern.forEach(p => { p.on = false; }); this._renderGridInto(fsGrid); });
+  fsShiftL.addEventListener('click', () => { this.pattern.push(this.pattern.shift()); this._renderGridInto(fsGrid); });
+  fsShiftR.addEventListener('click', () => { this.pattern.unshift(this.pattern.pop()); this._renderGridInto(fsGrid); });
+  fsTrDn.addEventListener('click', () => { this.pattern.forEach(p => p.midi = clamp(p.midi - 1, 0, 108)); this._renderGridInto(fsGrid); });
+  fsTrUp.addEventListener('click', () => { this.pattern.forEach(p => p.midi = clamp(p.midi + 1, 0, 108)); this._renderGridInto(fsGrid); });
+  fsOctDn.addEventListener('click', () => { this.pattern.forEach(p => p.midi = clamp(p.midi - 12, 0, 108)); this._renderGridInto(fsGrid); });
+  fsOctUp.addEventListener('click', () => { this.pattern.forEach(p => p.midi = clamp(p.midi + 12, 0, 108)); this._renderGridInto(fsGrid); });
+  fsRandom.addEventListener('click', () => { this.pattern.forEach(p => { p.on = Math.random() < 0.6; p.midi = clamp(36 + Math.floor(Math.random()*36), 0, 108); }); this._renderGridInto(fsGrid); });
+
+    // View toggle: default to Classic for clarity
+    this._fsMode = 'classic';
+    const updateViewButtons = () => {
+      viewClassic.classList.toggle('active', this._fsMode === 'classic');
+      viewQuick.classList.toggle('active', this._fsMode === 'quick');
+    };
+    viewClassic.addEventListener('click', () => { this._fsMode = 'classic'; updateViewButtons(); this._renderGridInto(fsGrid); });
+    viewQuick.addEventListener('click', () => { this._fsMode = 'quick'; updateViewButtons(); this._renderGridInto(fsGrid); });
+    updateViewButtons();
+
+    this._renderGridInto(fsGrid);
+  }
+
+  _renderGridInto(container) {
+    if (!container) return;
+    if (this._fsMode === 'classic') {
+      this._renderGridClassic(container);
+    } else {
+      this._renderGridQuick(container);
+    }
+  }
+
+  _renderGridClassic(container) {
+    const { opts } = buildNoteOptions(-1, 6, 48);
+    container.parentElement?.parentElement?.style.setProperty('--seq-steps', this.steps);
+    container.style.gridTemplateColumns = `repeat(${this.steps}, 200px)`;
+    container.innerHTML = '';
+    for (let i = 0; i < this.steps; i++) {
+      const step = this.pattern[i] || { on: false, midi: 48 };
+      const cell = document.createElement('div');
+      cell.className = 'seq-step';
+      cell.innerHTML = `
+        <div style="display:flex;align-items:center;justify-content:space-between;gap:6px;">
+          <small>Step ${i + 1}</small>
+          <label style="display:flex;align-items:center;gap:6px;font-size:11px;"><input data-role="on" type="checkbox" ${step.on ? 'checked' : ''}/> On</label>
+        </div>
+        <div style="display:grid;grid-template-columns: 1fr auto auto; gap:6px; align-items:center; margin-top:6px;">
+          <select data-role="note" style="width:100%;background:#0d1330;color:#e6e8f0;border:1px solid #2a3468;border-radius:4px;padding:8px;font-size:13px;">
+            ${opts.map(o => `<option value="${o.midi}" ${o.midi === step.midi ? 'selected' : ''}>${o.name}</option>`).join('')}
+          </select>
+          <button class="btn" data-role="semi-down" title="Semitone -1">-</button>
+          <button class="btn" data-role="semi-up" title="Semitone +1">+</button>
+        </div>
+        <div style="display:grid;grid-template-columns: auto auto 1fr; gap:6px; align-items:center; margin-top:6px;">
+          <button class="btn" data-role="oct-down" title="Octave -1">Oct-</button>
+          <button class="btn" data-role="oct-up" title="Octave +1">Oct+</button>
+          <button class="btn" data-role="play" title="Audition">Play</button>
+        </div>
+      `;
+      const onCb = cell.querySelector('[data-role=on]');
+      const sel = cell.querySelector('[data-role=note]');
+      const semiDn = cell.querySelector('[data-role=semi-down]');
+      const semiUp = cell.querySelector('[data-role=semi-up]');
+      const octDn = cell.querySelector('[data-role=oct-down]');
+      const octUp = cell.querySelector('[data-role=oct-up]');
+      const play = cell.querySelector('[data-role=play]');
+      onCb.addEventListener('input', () => this.pattern[i].on = onCb.checked);
+      sel.addEventListener('input', () => this.pattern[i].midi = Number(sel.value));
+      semiDn.addEventListener('click', () => { this.pattern[i].midi = clamp((this.pattern[i].midi|0) - 1, 0, 108); sel.value = String(this.pattern[i].midi); });
+      semiUp.addEventListener('click', () => { this.pattern[i].midi = clamp((this.pattern[i].midi|0) + 1, 0, 108); sel.value = String(this.pattern[i].midi); });
+      octDn.addEventListener('click', () => { this.pattern[i].midi = clamp((this.pattern[i].midi|0) - 12, 0, 108); sel.value = String(this.pattern[i].midi); });
+      octUp.addEventListener('click', () => { this.pattern[i].midi = clamp((this.pattern[i].midi|0) + 12, 0, 108); sel.value = String(this.pattern[i].midi); });
+      play.addEventListener('click', () => this._auditionMidi(this.pattern[i].midi));
+      container.appendChild(cell);
+    }
+  }
+
+  _renderGridQuick(container) {
+    container.parentElement?.parentElement?.style.setProperty('--seq-steps', this.steps);
+    container.style.gridTemplateColumns = `repeat(${this.steps}, 120px)`;
+    container.innerHTML = '';
+    let painting = null; // true/false or null
+    const setOn = (idx, val) => { if (!this.pattern[idx]) this.pattern[idx] = { on:false, midi:48 }; this.pattern[idx].on = val; };
+    const changeMidi = (idx, delta) => { const p = this.pattern[idx]; if (!p) return; p.midi = clamp((p.midi|0) + delta, 0, 108); };
+    for (let i = 0; i < this.steps; i++) {
+      const cell = document.createElement('div');
+      cell.className = 'seq-step';
+      cell.style.cursor = 'pointer';
+      const step = this.pattern[i] || { on: false, midi: 48 };
+      const noteLabel = midiToName(step.midi || 48);
+      cell.innerHTML = `
+        <div style="display:flex;align-items:center;justify-content:space-between;gap:6px;">
+          <small>${String(i + 1).padStart(2,'0')}</small>
+          <span data-role="on" style="font-size:10px;opacity:.85;">${step.on ? 'On' : 'Off'}</span>
+        </div>
+        <div data-role="note" style="margin-top:6px;background:#0b1235;border:1px solid #2a3468;border-radius:6px;padding:10px;text-align:center;font-weight:600;">${noteLabel}</div>
+      `;
+      const onSpan = cell.querySelector('[data-role=on]');
+      const noteEl = cell.querySelector('[data-role=note]');
+      const refresh = () => {
+        onSpan.textContent = this.pattern[i].on ? 'On' : 'Off';
+        noteEl.textContent = midiToName(this.pattern[i].midi);
+      };
+      cell.addEventListener('mousedown', (e) => {
+        painting = !(this.pattern[i].on);
+        setOn(i, painting);
+        refresh();
+      });
+      cell.addEventListener('mouseenter', (e) => {
+        if (painting !== null && e.buttons === 1) { setOn(i, painting); refresh(); }
+      });
+      document.addEventListener('mouseup', () => { painting = null; }, { once: true });
+      onSpan.addEventListener('click', () => { setOn(i, !this.pattern[i].on); refresh(); });
+      noteEl.addEventListener('click', (e) => { changeMidi(i, e.shiftKey ? -1 : 1); refresh(); });
+      noteEl.addEventListener('wheel', (e) => { e.preventDefault(); const delta = e.deltaY > 0 ? -1 : 1; changeMidi(i, delta); refresh(); });
+      noteEl.tabIndex = 0;
+      noteEl.addEventListener('keydown', (e) => {
+        if (e.key === 'ArrowUp') { changeMidi(i, 1); refresh(); }
+        else if (e.key === 'ArrowDown') { changeMidi(i, -1); refresh(); }
+        else if (e.key === '+') { changeMidi(i, 12); refresh(); }
+        else if (e.key === '-') { changeMidi(i, -12); refresh(); }
+      });
+      container.appendChild(cell);
+    }
+  }
+
+  _auditionMidi(midi, dur = 0.2) {
+    const hz = midiToHz(midi|0);
+    const osc = this.audioCtx.createOscillator();
+    const g = this.audioCtx.createGain();
+    g.gain.value = 0.0001;
+    osc.type = 'sine';
+    osc.frequency.value = hz;
+    osc.connect(g).connect(this.audioCtx.destination);
+    const t = this.audioCtx.currentTime;
+    g.gain.exponentialRampToValueAtTime(0.2, t + 0.005);
+    g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+    osc.start();
+    osc.stop(t + dur + 0.02);
+    setTimeout(() => { try { osc.disconnect(); g.disconnect(); } catch {} }, (dur + 0.05) * 1000);
   }
 
   _renderGrid() {
@@ -160,9 +386,9 @@ export class SequencerModule extends Module {
       // If connected to a Transport.clock, subscribe
       const transport = this.getModuleById?.(fromModuleId);
       if (transport?.subscribeClock) {
-        transport.subscribeClock(this.id, () => {
+        transport.subscribeClock(this.id, (evt) => {
           if (!this.isRunning) return;
-          this._advanceOneStep();
+          this._advanceOneStep(evt);
         });
         this._transportRef = transport;
         this._extClock = true;
@@ -188,8 +414,8 @@ export class SequencerModule extends Module {
     }
   }
 
-  _advanceOneStep() {
-    const now = this.audioCtx.currentTime;
+  _advanceOneStep(evt) {
+    const t = evt?.time ?? this.audioCtx.currentTime;
     const idx = this._stepIndex % this.steps;
     const st = this.pattern[idx];
     // highlight active step
@@ -197,22 +423,28 @@ export class SequencerModule extends Module {
       this.gridBody.querySelectorAll('.seq-step').forEach((el, i) => el.classList.toggle('active', i === idx));
     }
     if (st && st.on) {
-      const bpm = this._getBpm();
+      const bpm = evt?.bpm ?? this._getBpm();
       const hz = midiToHz(st.midi);
-      this.pitch.offset.cancelScheduledValues(now);
-  this.pitch.offset.setValueAtTime(hz, now);
-  this._pitchSubs.forEach(cb => { try { cb(hz, true); } catch {} });
-      this.gate.offset.cancelScheduledValues(now);
-      this.gate.offset.setValueAtTime(1, now);
-      this.gate.offset.setTargetAtTime(0, now + (60/bpm)/4 * this.gateLen, 0.005);
-  this._gateSubs.forEach(cb => { try { cb('on'); } catch {} });
-  // schedule off near the gate end
-  const offMs = ((60/bpm)/4 * this.gateLen) * 1000;
-  setTimeout(() => { this._gateSubs.forEach(cb => { try { cb('off'); } catch {} }); }, offMs * 0.95);
+      const gateDur = (60 / bpm) / 4 * this.gateLen;
+      // schedule audio at exact time
+      this.pitch.offset.cancelScheduledValues(t);
+      this.pitch.offset.setValueAtTime(hz, t);
+      this.gate.offset.cancelScheduledValues(t);
+      this.gate.offset.setValueAtTime(1, t);
+      this.gate.offset.setValueAtTime(0, t + gateDur);
+      // schedule subscribers at the right wall-clock time
+      const nowCtx = this.audioCtx.currentTime;
+      const delayOn = Math.max(0, (t - nowCtx) * 1000);
+      const delayOff = Math.max(0, (t + gateDur - nowCtx) * 1000);
+      setTimeout(() => { this._gateSubs.forEach(cb => { try { cb('on'); } catch {} }); }, delayOn);
+      setTimeout(() => { this._gateSubs.forEach(cb => { try { cb('off'); } catch {} }); }, delayOff);
+      setTimeout(() => { this._pitchSubs.forEach(cb => { try { cb(hz, true); } catch {} }); }, delayOn);
     } else {
-      this.gate.offset.setTargetAtTime(0, now, 0.005);
-  this._gateSubs.forEach(cb => { try { cb('off'); } catch {} });
-      this._pitchSubs.forEach(cb => { try { cb(this.pitch.offset.value, false); } catch {} });
+      this.gate.offset.setValueAtTime(0, t);
+      const nowCtx = this.audioCtx.currentTime;
+      const delay = Math.max(0, (t - nowCtx) * 1000);
+      setTimeout(() => { this._gateSubs.forEach(cb => { try { cb('off'); } catch {} }); }, delay);
+      setTimeout(() => { this._pitchSubs.forEach(cb => { try { cb(this.pitch.offset.value, false); } catch {} }); }, delay);
     }
     this._stepIndex++;
   }

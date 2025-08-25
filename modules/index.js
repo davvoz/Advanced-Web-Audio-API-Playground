@@ -15,10 +15,11 @@ import { TransportModule } from './transport.js';
 import { SamplerModule } from './sampler.js';
 import { LooperModule } from './looper.js';
 import { TB303Module } from './tb303.js';
-import { TB303SequencerModule } from './tb303-sequencer.js';
 import { DrumStationModule } from './drum-station.js';
+import { EQ8Module } from './eq8.js';
+import { FMModule } from './fm.js';
 
-export { Module, OscillatorModule, FilterModule, GainModule, DelayModule, ReverbModule, DistortionModule, MixerModule, DestinationModule, LFOModule, LFOSyncModule, ADSRModule, SequencerModule, TransportModule, SamplerModule, LooperModule, TB303Module, TB303SequencerModule, DrumStationModule };
+export { Module, OscillatorModule, FilterModule, GainModule, DelayModule, ReverbModule, DistortionModule, MixerModule, DestinationModule, LFOModule, LFOSyncModule, ADSRModule, SequencerModule, TransportModule, SamplerModule, LooperModule, TB303Module, DrumStationModule, EQ8Module, FMModule };
 
 export const ModuleRegistry = {
   Oscillator: OscillatorModule,
@@ -37,10 +38,15 @@ export const ModuleRegistry = {
   Sampler: SamplerModule,
   Looper: LooperModule,
   TB303: TB303Module,
-  TB303Seq: TB303SequencerModule,
   DrumStation: DrumStationModule,
+  EQ8: EQ8Module,
+  FM: FMModule,
   // Aliases for constructor-based names used in exported patches
   TB303: TB303Module,
-  TB303Sequencer: TB303SequencerModule,
   DrumStation: DrumStationModule,
+  EQ8Module: EQ8Module,
+  FMSynth: FMModule,
+  // Aliases for UI labels (with spaces/hyphens)
+  'Drum Station': DrumStationModule,
+  'TB-303': TB303Module,
 };
