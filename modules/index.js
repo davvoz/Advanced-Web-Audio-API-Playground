@@ -19,8 +19,9 @@ import { DrumStationModule } from './drum-station.js';
 import { EQ8Module } from './eq8.js';
 import { FMModule } from './fm.js';
 import { SidechainModule } from './sidechain.js';
+import { GlueCompressorModule } from './glue-compressor.js';
 
-export { Module, OscillatorModule, FilterModule, GainModule, DelayModule, ReverbModule, DistortionModule, MixerModule, DestinationModule, LFOModule, LFOSyncModule, ADSRModule, SequencerModule, TransportModule, SamplerModule, LooperModule, TB303Module, DrumStationModule, EQ8Module, FMModule, SidechainModule };
+export { Module, OscillatorModule, FilterModule, GainModule, DelayModule, ReverbModule, DistortionModule, MixerModule, DestinationModule, LFOModule, LFOSyncModule, ADSRModule, SequencerModule, TransportModule, SamplerModule, LooperModule, TB303Module, DrumStationModule, EQ8Module, FMModule, SidechainModule, GlueCompressorModule };
 
 export const ModuleRegistry = {
   Oscillator: OscillatorModule,
@@ -43,14 +44,17 @@ export const ModuleRegistry = {
   EQ8: EQ8Module,
   FM: FMModule,
   Sidechain: SidechainModule,
+  GlueCompressor: GlueCompressorModule,
   // Aliases for constructor-based names used in exported patches
   TB303: TB303Module,
   DrumStation: DrumStationModule,
   EQ8Module: EQ8Module,
   FMSynth: FMModule,
   SidechainModule: SidechainModule,
+  GlueCompressorModule: GlueCompressorModule,
   // Aliases for UI labels (with spaces/hyphens)
   'Drum Station': DrumStationModule,
   'TB-303': TB303Module,
   'Sidechain': SidechainModule,
+  'Glue Compressor': GlueCompressorModule,
 };
