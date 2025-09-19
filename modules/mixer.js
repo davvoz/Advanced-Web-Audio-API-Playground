@@ -5,38 +5,22 @@ export class MixerModule extends Module {
 
   buildAudio() {
     const ctx = this.audioCtx;
-    this.maxChannels = 8;
     this.numChannels = 4;
   this._showParamPorts = false; // compact by default
   this._cols = 2; // compact layout: columns in grid
   this._compactUI = true; // reduce heights and paddings
 
     this._sum = this._sum || ctx.createGain();
-    this.channels = Array.from({ length: this.maxChannels }, (_, i) => {
-      const idx = i + 1;
-      const input = ctx.createGain(); // input stage per channel
-      const mute = ctx.createGain(); mute.gain.value = 1; // 0 when muted
-      const level = ctx.createGain(); level.gain.value = 0.8;
-      const pan = ctx.createStereoPanner ? ctx.createStereoPanner() : null;
-      if (pan) pan.pan.value = 0;
-      input.connect(mute);
-      mute.connect(level);
-      if (pan) level.connect(pan); else level.connect(this._ensureSum());
-      if (pan) pan.connect(this._ensureSum());
-      return { input, mute, level, pan };
-    });
+    this.channels = [];
 
     this.master = ctx.createGain(); this.master.gain.value = 1;
     this._sum.connect(this.master);
 
     // Expose ports
     this.inputs = {};
-  this.channels.forEach((ch, i) => {
-      const idx = i + 1;
-      this.inputs[`in${idx}`] = { node: ch.input };
-      this.inputs[`level${idx}`] = { param: ch.level.gain };
-      if (ch.pan) this.inputs[`pan${idx}`] = { param: ch.pan.pan };
-    });
+    // Ensure initial channels and inputs mapping
+    this._ensureChannels(this.numChannels);
+    this.channels.forEach((ch, i) => this._registerChannelPorts(i + 1, ch));
     this.inputs.master = { param: this.master.gain };
 
     this.outputs = {
@@ -97,12 +81,14 @@ export class MixerModule extends Module {
     countCtl.style.gap = '4px';
     countCtl.innerHTML = `
       <label style="font-size:12px">Channels</label>
-      <input data-role="chCount" style="width:56px" type="number" min="1" max="8" step="1" value="4" />
+      <input data-role="chCount" style="width:72px" type="number" min="1" step="1" value="${this.numChannels}" />
     `;
     const chCountEl = countCtl.querySelector('[data-role=chCount]');
     chCountEl.addEventListener('input', () => {
-      const n = Math.max(1, Math.min(this.maxChannels, Number(chCountEl.value)));
+      const n = Math.max(1, Number(chCountEl.value) || 1);
       this.numChannels = n;
+      // add missing channels if necessary
+      this._ensureChannels(this.numChannels);
       this._updateChannelVisibility();
     });
     header.appendChild(countCtl);
@@ -236,7 +222,9 @@ export class MixerModule extends Module {
   fromJSON(state) {
     if (!state) return;
     if (typeof state.channelsCount === 'number') {
-      this.numChannels = Math.max(1, Math.min(this.maxChannels, state.channelsCount));
+      this.numChannels = Math.max(1, state.channelsCount);
+      // Ensure audio channels and ports exist for this count
+      this._ensureChannels(this.numChannels);
       if (this._ui?.chCountEl) this._ui.chCountEl.value = String(this.numChannels);
     }
     if (typeof state.showParamPorts === 'boolean') {
@@ -274,6 +262,8 @@ export class MixerModule extends Module {
   }
 
   _updateChannelVisibility() {
+    // Ensure channel audio/UI exist for requested count
+    this._ensureChannels(this.numChannels);
     // Show first numChannels and hide the rest; ensure hidden channels are muted
     this.channels.forEach((c, i) => {
       const idx = i + 1;
@@ -315,5 +305,72 @@ export class MixerModule extends Module {
       if (u.row) { u.row.style.padding = compact ? '0' : '2px 0'; }
     });
     if (this._ui?.masterEl) this._ui.masterEl.style.height = compact ? '14px' : '18px';
+  }
+
+  // Create and wire audio nodes for a channel (1-based index for naming)
+  _createChannelAudio(idx) {
+    const ctx = this.audioCtx;
+    const input = ctx.createGain();
+    const mute = ctx.createGain(); mute.gain.value = 1;
+    const level = ctx.createGain(); level.gain.value = 0.8;
+    const pan = ctx.createStereoPanner ? ctx.createStereoPanner() : null;
+    if (pan) pan.pan.value = 0;
+    input.connect(mute);
+    mute.connect(level);
+    if (pan) level.connect(pan); else level.connect(this._ensureSum());
+    if (pan) pan.connect(this._ensureSum());
+    return { input, mute, level, pan };
+  }
+
+  // Register this channel's ports in the inputs map
+  _registerChannelPorts(idx, ch) {
+    this.inputs[`in${idx}`] = { node: ch.input };
+    this.inputs[`level${idx}`] = { param: ch.level.gain };
+    if (ch.pan) this.inputs[`pan${idx}`] = { param: ch.pan.pan };
+  }
+
+  // Add missing channels up to n, wiring UI and ports without destroying existing DOM (to preserve cables)
+  _ensureChannels(n) {
+    const cur = this.channels.length;
+    for (let i = cur; i < n; i++) {
+      const idx = i + 1;
+      const ch = this._createChannelAudio(idx);
+      this.channels.push(ch);
+      // Register ports so new connections work
+      this._registerChannelPorts(idx, ch);
+      // If ports UI already rendered, append new buttons for this channel
+      if (this.inPortsEl) {
+        try {
+          const addPortBtn = (name) => this.inPortsEl.appendChild(this._portEl('in', name));
+          addPortBtn(`in${idx}`);
+          addPortBtn(`level${idx}`);
+          if (ch.pan) addPortBtn(`pan${idx}`);
+        } catch {}
+      }
+      // If controls UI exists, add a row for this channel
+      if (this._ui?.rowsWrap) {
+        const u = (() => {
+          const row = document.createElement('div');
+          row.className = 'control';
+          row.style.display = 'flex'; row.style.alignItems = 'center'; row.style.gap = '6px'; row.style.margin = '0'; row.style.padding = '0';
+          row.innerHTML = `
+            <span style="min-width:26px;text-align:right;font-size:11px;color:var(--fg-muted,inherit)">Ch ${idx}</span>
+            <input data-role="level" title="Level" style="flex:1;min-width:70px;height:14px" type="range" min="0" max="1.5" step="0.01" value="0.8" />
+            ${ch.pan ? '<input data-role="pan" title="Pan" style="width:80px;height:14px" type="range" min="-1" max="1" step="0.01" value="0" />' : ''}
+            <input data-role="mute" title="Mute" style="transform:scale(0.9)" type="checkbox" />
+          `;
+          const levelEl = row.querySelector('[data-role=level]');
+          const panEl = row.querySelector('[data-role=pan]');
+          const muteEl = row.querySelector('[data-role=mute]');
+          levelEl.addEventListener('input', () => ch.level.gain.setTargetAtTime(Number(levelEl.value), this.audioCtx.currentTime, 0.01));
+          if (panEl && ch.pan) panEl.addEventListener('input', () => ch.pan.pan.setTargetAtTime(Number(panEl.value), this.audioCtx.currentTime, 0.01));
+          muteEl.addEventListener('change', () => ch.mute.gain.setTargetAtTime(muteEl.checked ? 0 : 1, this.audioCtx.currentTime, 0.005));
+          return { row, levelEl, panEl, muteEl };
+        })();
+        this._ui.rowsWrap.appendChild(u.row);
+        this._ui.ch[i] = u;
+        this._applyCompactStyles();
+      }
+    }
   }
 }
