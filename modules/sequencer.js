@@ -1,8 +1,5 @@
 import { Module } from './module.js';
 
-// Reasonable upper bound to keep UI responsive; can be raised if needed
-const MAX_STEPS = 128;
-
 const NOTE_NAMES = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'];
 const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
 const midiToHz = (m) => 440 * Math.pow(2, (m - 69) / 12);
@@ -88,7 +85,7 @@ export class SequencerModule extends Module {
         </div>
       </label>
       <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;">
-    <div><small>Steps</small><input type="number" min="1" max="${MAX_STEPS}" step="1" value="${this.steps}" /></div>
+  <div><small>Steps</small><input type="number" min="1" step="1" value="${this.steps}" /></div>
         <div><small>Gate (%)</small><input type="range" min="0" max="1" step="0.01" value="0.5" /></div>
       </div>
     `;
@@ -145,7 +142,7 @@ export class SequencerModule extends Module {
     controls.className = 'control';
     controls.innerHTML = `
       <div style="display:grid;grid-template-columns: repeat(12, minmax(90px, auto)); gap:10px; align-items:center;">
-        <div><small>Steps</small><input data-role="fs-steps" type="number" min="1" max="${MAX_STEPS}" step="1" value="${this.steps}" /></div>
+  <div><small>Steps</small><input data-role="fs-steps" type="number" min="1" step="1" value="${this.steps}" /></div>
         <div><small>Gate (%)</small><input data-role="fs-gate" type="range" min="0" max="1" step="0.01" value="${this.gateLen}" /></div>
         <div style="display:flex; gap:6px; flex-wrap:wrap;">
           <button class="btn" data-role="fs-clear">Clear</button>
@@ -370,7 +367,7 @@ export class SequencerModule extends Module {
   }
 
   setSteps(n) {
-    this.steps = Math.max(1, Math.min(MAX_STEPS, n | 0));
+    this.steps = Math.max(1, (n | 0));
     if (this.pattern.length < this.steps) {
       const add = Array.from({ length: this.steps - this.pattern.length }, () => ({ on: false, midi: 48 }));
       this.pattern = this.pattern.concat(add);
@@ -381,12 +378,11 @@ export class SequencerModule extends Module {
     this._renderGrid();
   }
 
-  // Duplicate pattern to double length (up to MAX_STEPS)
+  // Duplicate pattern to double length (unlimited)
   _duplicatePattern() {
     const cur = this.steps | 0;
     if (!cur || cur <= 0) return;
-    if (cur >= MAX_STEPS) return; // already at max
-    const target = Math.min(MAX_STEPS, cur * 2);
+    const target = cur * 2;
     // Ensure we have at least cur items
     while (this.pattern.length < cur) this.pattern.push({ on: false, midi: 48 });
     const src = this.pattern.slice(0, cur).map(p => ({ on: !!p.on, midi: Number.isFinite(p?.midi) ? (p.midi | 0) : 48 }));
