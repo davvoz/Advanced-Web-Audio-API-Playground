@@ -1,4 +1,5 @@
 import { Module } from './module.js';
+import { syncWorkerTime } from './lib/syncWorkerTime.js';
 
 export class TransportModule extends Module {
   get title() { return 'Transport'; }
@@ -23,16 +24,12 @@ export class TransportModule extends Module {
 
   // Subscribers and scheduler
   this._subs = new Map(); // id -> (evt) => void
-  this._animationId = null;
-  this._nextTickTime = 0;
+
+  // Worker-based clock
+  this._clockW = null;
+  this._onWMsg = null;
   this._tickIndex = 0;
-  this._scheduleAheadSec = 0.1;  // how far ahead to schedule
-  this._lastScheduleTime = 0;    // track last schedule to avoid excessive calls
-  this._minScheduleInterval = 20; // minimum ms between schedule calls
-  
-  // UI throttling detection
-  this._isUIBusy = false;
-  this._uiBusyTimeout = null;
+  this._nextTickTime = 0; // for visuals
   }
 
   buildControls(container) {
@@ -70,84 +67,61 @@ export class TransportModule extends Module {
     container.appendChild(tempoCtl);
   }
 
-  _scheduler() {
-    if (!this.running) return;
-    
-    const now = performance.now();
-    const timeSinceLastSchedule = now - this._lastScheduleTime;
-    
-    // Throttle scheduling during intensive UI interactions
-    if (this._isUIBusy && timeSinceLastSchedule < this._minScheduleInterval * 2) {
-      this._scheduleNext();
+  // Worker message handler will dispatch tick batches and set visuals
+  _attachWorker() {
+    if (this._clockW) return;
+    try {
+      this._clockW = new Worker(new URL('./workers/clockWorker.js', import.meta.url), { type: 'module' });
+    } catch (e) {
+      console.error('Failed to start clock worker', e);
+      this._clockW = null;
       return;
     }
-    
-    // Only schedule if enough time has passed (avoid excessive scheduling)
-    if (timeSinceLastSchedule < this._minScheduleInterval) {
-      this._scheduleNext();
-      return;
-    }
-    
-    this._lastScheduleTime = now;
-    
-    const ctx = this.audioCtx;
-    const spb = 60 / this.bpm;
-    const secPerTick = spb / this.ppqn; // 16th
-    const ahead = ctx.currentTime + this._scheduleAheadSec;
-
-    while (this._nextTickTime < ahead) {
-      // Schedule visual pulses (clock/beat) at the exact time
-      const t = this._nextTickTime;
-      this.clock.offset.setValueAtTime(1, t);
-      this.clock.offset.setValueAtTime(0, t + 0.002);
-      if (this._tickIndex % this.ppqn === 0) {
-        this.beat.offset.setValueAtTime(1, t);
-        this.beat.offset.setValueAtTime(0, t + 0.005);
+    this._onWMsg = (e) => {
+      const msg = e.data || {};
+      if (msg.type === 'batch') {
+        // Forward ticks to subscribers and schedule visual pulses
+        const ticks = msg.ticks || [];
+        for (const t of ticks) {
+          const time = t.time;
+          // Visual clock pulses
+          this.clock.offset.setValueAtTime(1, time);
+          this.clock.offset.setValueAtTime(0, time + 0.002);
+          if (t.index % this.ppqn === 0) {
+            this.beat.offset.setValueAtTime(1, time);
+            this.beat.offset.setValueAtTime(0, time + 0.005);
+          }
+          const evt = { time, bpm: this.bpm, ppqn: this.ppqn, tick: t.index };
+          this._subs.forEach(cb => { try { cb(evt); } catch {} });
+        }
+        if (ticks.length) {
+          const last = ticks[ticks.length - 1];
+          this._tickIndex = last.index + 1;
+          this._nextTickTime = last.time + (60 / this.bpm / this.ppqn);
+        }
       }
-      // Notify subscribers with timing info
-      const evt = { time: t, bpm: this.bpm, ppqn: this.ppqn, tick: this._tickIndex };
-      this._subs.forEach(cb => { try { cb(evt); } catch {} });
-
-      this._tickIndex += 1;
-      this._nextTickTime += secPerTick;
-    }
-    
-    this._scheduleNext();
+    };
+    this._clockW.addEventListener('message', this._onWMsg);
   }
 
-  _scheduleNext() {
-    if (this.running) {
-      this._animationId = requestAnimationFrame(() => this._scheduler());
-    }
-  }
-
-  _setUIBusy(busy) {
-    this._isUIBusy = busy;
-    if (this._uiBusyTimeout) clearTimeout(this._uiBusyTimeout);
-    if (busy) {
-      // Auto-clear UI busy flag after a short delay
-      this._uiBusyTimeout = setTimeout(() => {
-        this._isUIBusy = false;
-      }, 100);
-    }
-  }
-
-  start() {
-  if (this.running) return;
-  this.running = true;
-  const now = this.audioCtx.currentTime;
-  this._tickIndex = 0;
-  this._nextTickTime = now + 0.05; // slight offset to start
-  this._lastScheduleTime = 0; // reset timing
-  if (this._animationId) cancelAnimationFrame(this._animationId);
-  this._scheduleNext();
+  async start() {
+    if (this.running) return;
+    this.running = true;
+    this._attachWorker();
+    if (!this._clockW) { this.running = false; return; }
+    // Sync mapping and configure worker
+    await syncWorkerTime(this._clockW, this.audioCtx);
+    this._clockW.postMessage({ type: 'config', bpm: this.bpm, ppqn: this.ppqn, lookAheadSec: 0.35, batchEveryMs: 25 });
+    const startAt = this.audioCtx.currentTime + 0.1;
+    this._tickIndex = Math.ceil(startAt / (60 / this.bpm / this.ppqn));
+    this._nextTickTime = this._tickIndex * (60 / this.bpm / this.ppqn);
+    this._clockW.postMessage({ type: 'play', audioStartSec: startAt });
   }
 
   stop() {
-  this.running = false;
-  if (this._animationId) cancelAnimationFrame(this._animationId);
-  this._animationId = null;
+    this.running = false;
     const now = this.audioCtx.currentTime;
+    try { this._clockW?.postMessage({ type: 'stop' }); } catch {}
     this.clock.offset.setTargetAtTime(0, now, 0.01);
     this.beat.offset.setTargetAtTime(0, now, 0.01);
   }
@@ -163,18 +137,31 @@ export class TransportModule extends Module {
     // Notify subscribers immediately about reset
     const evt = { time: now, bpm: this.bpm, ppqn: this.ppqn, tick: 0, reset: true };
     this._subs.forEach(cb => { try { cb(evt); } catch {} });
+    try { this._clockW?.postMessage({ type: 'seek', audioAtSec: now }); } catch {}
   }
 
   subscribeClock(id, cb) { this._subs.set(id, cb); }
   unsubscribeClock(id) { this._subs.delete(id); }
 
-  // Public method to allow external notification of UI activity
-  setUIBusy(busy) { this._setUIBusy(busy); }
+  // Public method kept for compatibility (no-op with worker clock)
+  setUIBusy(busy) { /* no-op: worker-based clock */ }
 
   toJSON() { return { bpm: this.bpm, running: this.running }; }
   fromJSON(state) {
     if (!state) return;
     if (typeof state.bpm === 'number') { this.bpm = state.bpm; this.bpmOut.offset.value = this.bpm; }
     if (state.running) this.start();
+  }
+
+  dispose() {
+    super.dispose?.();
+    try {
+      if (this._clockW) {
+        if (this._onWMsg) this._clockW.removeEventListener('message', this._onWMsg);
+        this._clockW.terminate();
+      }
+    } catch {}
+    this._clockW = null;
+    this._onWMsg = null;
   }
 }
