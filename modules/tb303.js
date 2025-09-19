@@ -135,6 +135,7 @@ export class TB303Module extends Module {
         <div><small>Gate %</small><input data-role="seq-gate" type="number" min="5" max="100" step="1" value="${this._seq.gatePct}"/></div>
         <div style="display:flex;gap:6px;flex-wrap:wrap;justify-content:flex-end;">
           <button class="btn" data-role="seq-clear">Clear</button>
+          <button class="btn" data-role="seq-dup" title="Duplicate pattern">Dup</button>
           <button class="btn" data-role="seq-shift-left" title="Shift left">◀</button>
           <button class="btn" data-role="seq-shift-right" title="Shift right">▶</button>
           <button class="btn" data-role="seq-tr-down" title="Transpose -1">−1</button>
@@ -182,8 +183,16 @@ export class TB303Module extends Module {
   const seqOctDown = seqCtl.querySelector('[data-role=seq-oct-down]');
   const seqOctUp = seqCtl.querySelector('[data-role=seq-oct-up]');
   const seqRandom = seqCtl.querySelector('[data-role=seq-random]');
+  const seqDup = seqCtl.querySelector('[data-role=seq-dup]');
     const seqExpand = seqCtl.querySelector('[data-role=seq-expand]');
     this._seqGridEl = seqCtl.querySelector('[data-role=seq-grid]');
+    // Ensure the outer container never widens the module; horizontal scroll handled by inner wrapper
+    if (this._seqGridEl) {
+  this._seqGridEl.style.width = '100%';
+      this._seqGridEl.style.maxWidth = '100%';
+      this._seqGridEl.style.overflowX = 'hidden';
+  this._seqGridEl.style.boxSizing = 'border-box';
+    }
     const clamp = (v,a,b)=>Math.max(a,Math.min(b,v));
     seqSteps.addEventListener('input', () => { this._seq.steps = clamp(Number(seqSteps.value)||16,1,64); while (this._seq.pattern.length < this._seq.steps) this._seq.pattern.push({ note:0, octave:1, gate:true, accent:false, slide:false }); this._seq.pattern.length = this._seq.steps; this._renderSeqGrid(); });
   seqRoot.addEventListener('input', () => { this._seq.rootMidi = clamp(Number(seqRoot.value)||48, 0, 96); this._renderSeqGrid(); });
@@ -197,7 +206,29 @@ export class TB303Module extends Module {
   seqTrUp?.addEventListener('click', () => { tr_(+1); this._renderSeqGrid(); });
   seqOctDown?.addEventListener('click', () => { oc_(-1); this._renderSeqGrid(); });
   seqOctUp?.addEventListener('click', () => { oc_(+1); this._renderSeqGrid(); });
-  seqRandom?.addEventListener('click', () => { this._seq.pattern.forEach(s => { s.gate = Math.random()<0.7; s.accent = Math.random()<0.25; s.slide = Math.random()<0.2; s.note = Math.max(-7, Math.min(7, (s.note||0) + Math.floor((Math.random()*3)-1))); s.octave = Math.max(0, Math.min(2, (s.octave||1) + (Math.random()<0.15 ? (Math.random()<0.5?-1:1) : 0))); }); this._renderSeqGrid(); });
+  seqDup?.addEventListener('click', () => {
+    this._duplicateSeqPattern();
+    if (seqSteps) seqSteps.value = String(this._seq.steps);
+    this._renderSeqGrid();
+    // After re-render, auto-scroll the inner wrapper to the end so the new steps are visible
+    setTimeout(() => {
+      const wrap = this._seqGridEl?.querySelector('.seq-grid-wrap');
+      if (wrap) wrap.scrollLeft = wrap.scrollWidth;
+    }, 0);
+  });
+  // Randomize and then shift two octaves down
+  seqRandom?.addEventListener('click', () => {
+    this._seq.pattern.forEach(s => {
+      s.gate = Math.random() < 0.7;
+      s.accent = Math.random() < 0.25;
+      s.slide = Math.random() < 0.2;
+      s.note = Math.max(-7, Math.min(7, (s.note || 0) + Math.floor((Math.random() * 3) - 1)));
+      s.octave = Math.max(0, Math.min(2, (s.octave || 1) + (Math.random() < 0.15 ? (Math.random() < 0.5 ? -1 : 1) : 0)));
+    });
+    // Shift the randomized pattern two octaves down
+    this._transposeSteps(-24);
+    this._renderSeqGrid();
+  });
     seqExpand.addEventListener('click', () => this._openSeqFullscreen());
     this._renderSeqGrid();
   }
@@ -210,8 +241,17 @@ export class TB303Module extends Module {
     // Wrap and grid like normal Sequencer
     const wrap = document.createElement('div');
     wrap.className = 'seq-grid-wrap';
+  // Force wrapper to take module width and scroll internally
+  wrap.style.width = '100%';
+  wrap.style.maxWidth = '100%';
+  wrap.style.overflowX = 'auto';
+  wrap.style.overflowY = 'hidden';
     const grid = document.createElement('div');
     grid.className = 'seq-grid';
+  // Ensure grid layout applies outside of .module-sequencer scope
+  grid.style.display = 'grid';
+  grid.style.gap = '8px';
+  grid.style.width = 'max-content';
     // layout width similar to normal sequencer
     grid.style.gridTemplateColumns = `repeat(${this._seq.steps}, 160px)`;
     wrap.appendChild(grid);
@@ -267,6 +307,47 @@ export class TB303Module extends Module {
     }
   }
 
+  // Transpose all steps by a number of semitones, keeping values within reasonable bounds
+  _transposeSteps(semi) {
+    if (!semi || !Number.isFinite(semi)) return;
+    const root = this._seq.rootMidi | 0;
+    this._seq.pattern.forEach((s) => {
+      const curAbs = root + (s.note || 0) + 12 * (s.octave || 0);
+      const targetAbs = curAbs + (semi | 0);
+      const diff = targetAbs - root;
+      let best = { err: Infinity, oct: s.octave || 0, note: s.note || 0 };
+      for (let oc = -3; oc <= 4; oc++) {
+        let nt = diff - 12 * oc;
+        nt = Math.max(-12, Math.min(12, nt));
+        const val = root + nt + 12 * oc;
+        const err = Math.abs(val - targetAbs);
+        if (err < best.err) best = { err, oct: oc, note: nt };
+      }
+      s.octave = best.oct;
+      s.note = best.note;
+    });
+  }
+
+  // Duplicate sequencer pattern to double length (up to 64 steps)
+  _duplicateSeqPattern() {
+    const cur = this._seq?.steps | 0;
+    if (!cur || cur <= 0) return;
+    if (cur >= 64) return; // already at max
+    const target = Math.min(64, cur * 2);
+    // Ensure pattern has at least `cur` items
+    while (this._seq.pattern.length < cur) this._seq.pattern.push({ note:0, octave:1, gate:true, accent:false, slide:false });
+    const src = this._seq.pattern.slice(0, cur).map(s => ({
+      note: s?.note || 0,
+      octave: s?.octave || 1,
+      gate: !!s?.gate,
+      accent: !!s?.accent,
+      slide: !!s?.slide,
+    }));
+    const extra = src.slice(0, target - cur).map(s => ({ ...s }));
+    this._seq.pattern = src.concat(extra);
+    this._seq.steps = target;
+  }
+
   _renderSeqGridInto(container) {
     const g = container; if (!g) return; g.innerHTML = '';
     const wrap = document.createElement('div');
@@ -310,6 +391,7 @@ export class TB303Module extends Module {
         <div><small>Gate %</small><input data-role="fs-gate" type="number" min="5" max="100" step="1" value="${this._seq.gatePct}" /></div>
         <div style="display:flex;gap:8px;flex-wrap:wrap;">
           <button class="btn" data-role="fs-clear">Clear</button>
+          <button class="btn" data-role="fs-dup" title="Duplicate pattern">Duplicate</button>
           <button class="btn" data-role="fs-shift-left" title="Shift left">Shift ◀</button>
           <button class="btn" data-role="fs-shift-right" title="Shift right">Shift ▶</button>
           <button class="btn" data-role="fs-transpose-down" title="Transpose -1">−1 st</button>
@@ -320,8 +402,8 @@ export class TB303Module extends Module {
         </div>
       </div>
     `;
-    const gridWrap = document.createElement('div'); gridWrap.className = 'control';
-    gridWrap.innerHTML = `<div class="seq-grid-wrap" style="max-height:none;"><div data-role="fs-grid" style="overflow:auto; max-height: 100%; border:1px solid #26305a; border-radius:6px; padding:6px; background:#0a0f2a"></div></div>`;
+  const gridWrap = document.createElement('div'); gridWrap.className = 'control';
+  gridWrap.innerHTML = `<div class="seq-grid-wrap" style="max-height:none; width:100%;"><div data-role="fs-grid" style="overflow:auto; max-height: 100%; border:1px solid #26305a; border-radius:6px; padding:6px; background:#0a0f2a; width:100%;"></div></div>`;
     const fsGrid = gridWrap.querySelector('[data-role=fs-grid]');
     content.appendChild(controls);
     content.appendChild(gridWrap);
@@ -338,6 +420,7 @@ export class TB303Module extends Module {
   const fsOctDown = controls.querySelector('[data-role=fs-oct-down]');
   const fsOctUp = controls.querySelector('[data-role=fs-oct-up]');
   const fsRandom = controls.querySelector('[data-role=fs-random]');
+  const fsDup = controls.querySelector('[data-role=fs-dup]');
   const clamp = (v,a,b)=>Math.max(a,Math.min(b,v));
   // Temporary placeholder; will be overwritten by render once view buttons are created
   let refresh = () => {};
@@ -353,15 +436,27 @@ export class TB303Module extends Module {
   fsTrUp.addEventListener('click', () => { tr(+1); refresh(); });
   fsOctDown.addEventListener('click', () => { oc(-1); refresh(); });
   fsOctUp.addEventListener('click', () => { oc(+1); refresh(); });
+  fsDup?.addEventListener('click', () => {
+    this._duplicateSeqPattern();
+    if (fsSteps) fsSteps.value = String(this._seq.steps);
+    refresh();
+    // Scroll to show the new duplicated steps at the end
+    setTimeout(() => {
+      const wrap = gridWrap.querySelector('.seq-grid-wrap');
+      if (wrap) wrap.scrollLeft = wrap.scrollWidth;
+    }, 0);
+  });
     fsRandom.addEventListener('click', () => {
       this._seq.pattern.forEach((s,i) => {
         s.gate = Math.random() < 0.7;
         s.accent = Math.random() < 0.25;
         s.slide = Math.random() < 0.2;
-        s.note = Math.max(-7, Math.min(7, (s.note||0) + Math.floor((Math.random()*3)-1)));
-        s.octave = Math.max(0, Math.min(2, (s.octave||1) + (Math.random()<0.15 ? (Math.random()<0.5?-1:1) : 0)));
+        s.note = Math.max(-7, Math.min(7, (s.note || 0) + Math.floor((Math.random() * 3) - 1)));
+        s.octave = Math.max(0, Math.min(2, (s.octave || 1) + (Math.random() < 0.15 ? (Math.random() < 0.5 ? -1 : 1) : 0)));
       });
-  refresh();
+      // Shift the randomized pattern two octaves down
+      this._transposeSteps(-24);
+      refresh();
     });
 
     // Close handlers
@@ -571,6 +666,7 @@ export class TB303Module extends Module {
   }
 
   _onTick(evt) {
+  if (evt && evt.reset) { this._seq.pos = 0; this._lastSlide = false; return; }
     const step = this._seq.pos % Math.max(1, this._seq.steps);
     const st = this._seq.pattern[step];
     const midi = (this._seq.rootMidi|0) + (st.note||0) + (st.octave||0)*12;

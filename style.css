@@ -148,6 +148,34 @@ body {
     user-select: none
 }
 
+/* selection highlight */
+
+/* group rectangle */
+.group-rect {
+    position: absolute;
+    border: 2px dashed rgba(139, 161, 255, 0.65);
+    border-radius: 8px;
+    background: rgba(102, 163, 255, 0.06);
+    pointer-events: auto;
+}
+.group-rect .group-header {
+    position: absolute;
+    top: -22px;
+    left: 0;
+    background: rgba(102,163,255,0.9);
+    color: #0b0f1e;
+    font-weight: 600;
+    font-size: 12px;
+    padding: 2px 8px;
+    border-radius: 6px 6px 0 0;
+        -webkit-user-select: none;
+        user-select: none;
+    cursor: move;
+}
+.group-rect.selected { box-shadow: 0 0 0 2px rgba(102,163,255,0.6) inset; }
+
+/* removed .grouping-controls styles (grouping feature rolled back) */
+
 .module .resize-handle {
     position: absolute;
     right: 2px;
@@ -177,10 +205,41 @@ body {
     grid-template-columns: 1fr;
 }
 
+/* Drum Station specific: allow wide layout and stack controls full width */
+.module.module-drum-station {
+    min-width: 620px;
+    max-width: 1400px;
+}
+.module.module-drum-station .controls {
+    grid-template-columns: 1fr;
+}
+
+/* TB-303: stack controls and keep sequencer grid contained */
+.module.module-tb303 .controls {
+    grid-template-columns: 1fr;
+}
+.module.module-tb303 {
+    max-width: 640px; /* enforce the same guard as generic modules */
+}
+.module.module-tb303 [data-role="seq-grid"] {
+    max-width: 100%;
+    overflow-x: hidden; /* inner .seq-grid-wrap scrolls */
+}
+
 .module-sequencer .seq-grid-wrap {
     overflow: auto;
     max-width: 100%;
     padding-bottom: 4px
+}
+
+/* Ensure any sequencer grid (including fullscreen editor) scrolls within its own wrapper */
+.seq-grid-wrap {
+    overflow-x: auto;
+    overflow-y: hidden;
+    max-width: 100%;
+}
+.seq-grid {
+    width: max-content; /* prevent squeezing; allow horizontal scroll instead */
 }
 
 .module-sequencer .seq-grid {
@@ -298,27 +357,7 @@ body {
     color: #ffb4b4
 }
 
-.ports {
-    display: flex;
-    gap: 8px;
-    margin: 6px 0
-}
-
-.port-col {
-    flex: 1
-}
-
-.port-title {
-    font-size: 11px;
-    color: var(--muted);
-    margin-bottom: 4px
-}
-
-.port-list {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 6px
-}
+/* removed group selection and group container styles */
 
 .port {
     display: inline-flex;
@@ -327,7 +366,7 @@ body {
     padding: 3px 6px;
     border-radius: 999px;
     border: 1px solid #2a315c;
-    cursor: pointer
+    cursor: pointer;
 }
 
 .port .dot {
@@ -349,6 +388,9 @@ body {
     grid-template-columns: repeat(2, minmax(0, 1fr));
     gap: 8px
 }
+
+/* Important for overflow within grid children: allow them to shrink */
+.controls > .control { min-width: 0; }
 
 .control {
     background: #0e1330;

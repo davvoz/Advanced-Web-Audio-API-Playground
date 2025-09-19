@@ -30,7 +30,7 @@ export class DrumStationModule extends Module {
       const pan = ctx.createStereoPanner ? ctx.createStereoPanner() : null;
       if (pan) ch.connect(pan), pan.connect(this._out); else ch.connect(this._out);
       const fallback = makeClickBuffer(ctx, 120 + i * 30);
-      return { label, buffer: null, gain: ch, pan, vol: 0.9, panVal: 0, fallback };
+      return { label, buffer: null, gain: ch, pan, vol: 0.9, panVal: 0, pitch: 0, muted: false, fallback };
     });
 
     // Sequencer state
@@ -81,17 +81,24 @@ export class DrumStationModule extends Module {
   dupBtn.addEventListener('click', () => this._duplicatePattern());
 
     // Grid
-    const gridWrap = document.createElement('div'); gridWrap.className = 'control';
-    gridWrap.innerHTML = `<label>Pattern (Shift-click = Accent)</label><div data-role="grid" style="overflow:auto; max-height: 220px; border:1px solid #26305a; border-radius:6px; padding:8px; background:#0a0f2a"></div>`;
+  const gridWrap = document.createElement('div'); gridWrap.className = 'control';
+  // Make pattern area full width of module
+  gridWrap.style.gridColumn = '1 / -1';
+  gridWrap.innerHTML = `<label>Pattern (Shift-click = Accent)</label><div data-role="grid" style="overflow:auto; max-height: 220px; border:1px solid #26305a; border-radius:6px; padding:8px; background:#0a0f2a; width:100%"></div>`;
     container.appendChild(gridWrap);
     this._gridEl = gridWrap.querySelector('[data-role=grid]');
     this._renderGrid();
 
     // Slots controls
     const slots = document.createElement('div'); slots.className = 'control';
+    // Make tracks area full width of module
+    slots.style.gridColumn = '1 / -1';
+  // Keep controls inside module width without horizontal scrolling
+  slots.style.overflowX = 'hidden';
     slots.innerHTML = `<label>Tracks</label>`;
     const grid = document.createElement('div');
-    grid.style.cssText = 'display:grid; grid-template-columns: 1fr 110px 110px 1fr; gap:8px; align-items:center;';
+  // Flexible columns that always fit within parent width
+  grid.style.cssText = 'display:grid; width:100%; grid-template-columns: repeat(5, minmax(0, 1fr)); gap:8px; align-items:center;';
     slots.appendChild(grid);
     container.appendChild(slots);
 
@@ -106,7 +113,9 @@ export class DrumStationModule extends Module {
         </div>
         <div><small>Vol</small><input data-role="vol" type="range" min="0" max="1.5" step="0.01" value="${s.vol}"></div>
         <div><small>Pan</small><input data-role="pan" type="range" min="-1" max="1" step="0.01" value="${s.panVal}"></div>
-        <div style="display:flex;gap:8px;">
+        <div><small>Pitch (st)</small><input data-role="pitch" type="range" min="-24" max="24" step="1" value="${s.pitch||0}"></div>
+        <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
+          <label style="display:flex;align-items:center;gap:6px;"><input data-role="mute" type="checkbox"> <small>Mute</small></label>
           <button class="btn" data-role="trig">Trig</button>
           <span class="hint" style="opacity:.7;">Drop file here</span>
         </div>`;
@@ -115,8 +124,10 @@ export class DrumStationModule extends Module {
       const loadBtn = row.querySelector('[data-role=load]');
       const fileInput = row.querySelector('input[type=file]');
       const vol = row.querySelector('[data-role=vol]');
-      const pan = row.querySelector('[data-role=pan]');
-      const trig = row.querySelector('[data-role=trig]');
+  const pan = row.querySelector('[data-role=pan]');
+  const pitch = row.querySelector('[data-role=pitch]');
+  const trig = row.querySelector('[data-role=trig]');
+  const mute = row.querySelector('[data-role=mute]');
       loadBtn.addEventListener('click', () => fileInput.click());
       fileInput.addEventListener('change', async () => {
         const f = fileInput.files?.[0]; if (!f) return;
@@ -130,9 +141,18 @@ export class DrumStationModule extends Module {
         const arr = await f.arrayBuffer();
         this.audioCtx.decodeAudioData(arr.slice(0)).then(buf => { s.buffer = buf; }).catch(()=>{});
       });
-      vol.addEventListener('input', () => { s.vol = Number(vol.value); s.gain.gain.setTargetAtTime(s.vol, this.audioCtx.currentTime, 0.01); });
+      vol.addEventListener('input', () => { s.vol = Number(vol.value); const target = s.muted ? 0 : s.vol; s.gain.gain.setTargetAtTime(target, this.audioCtx.currentTime, 0.01); });
       pan.addEventListener('input', () => { s.panVal = Number(pan.value); if (s.pan) s.pan.pan.setTargetAtTime(s.panVal, this.audioCtx.currentTime, 0.01); });
+  pitch.addEventListener('input', () => { s.pitch = Number(pitch.value); });
       trig.addEventListener('click', () => this._trigger(idx, 1));
+      if (mute) {
+        mute.checked = !!s.muted;
+        mute.addEventListener('input', () => {
+          s.muted = !!mute.checked;
+          const target = s.muted ? 0 : Math.max(0, s.vol);
+          s.gain.gain.setTargetAtTime(target, this.audioCtx.currentTime, 0.01);
+        });
+      }
     });
   }
 
@@ -190,34 +210,51 @@ export class DrumStationModule extends Module {
 
   onParamConnected(portName, fromModuleId, fromPortName) {
     const src = this.getModuleById?.(fromModuleId);
-    if (portName === 'clock' && fromPortName === 'clock' && src?.subscribeClock) { src.subscribeClock(this.id, () => this._onTick(src)); this._transport = src; }
+    if (portName === 'clock' && fromPortName === 'clock' && src?.subscribeClock) {
+      // Receive precise timing info from Transport
+      src.subscribeClock(this.id, (evt) => this._onTick(evt));
+      this._transport = src;
+    }
   }
   onParamDisconnected(portName, fromModuleId, fromPortName) {
     const src = this.getModuleById?.(fromModuleId);
     if (portName === 'clock' && fromPortName === 'clock' && src?.unsubscribeClock) { src.unsubscribeClock(this.id); if (this._transport===src) this._transport=null; }
   }
 
-  _onTick(transport) {
+  _onTick(evt) {
+  if (evt && evt.reset) { this._pos = 0; return; }
+  const t = evt?.time ?? this.audioCtx.currentTime;
     const step = this._pos % this._steps;
     for (let r = 0; r < this._lanes.length; r++) {
       if (this._pattern[r][step]) {
         const vel = (this._accent[r][step] ? 1.0 : 0.8) * this._velocity;
-        this._trigger(r, vel);
+        this._trigger(r, vel, t);
       }
     }
     this._pos = (this._pos + 1) % Math.max(1, this._steps);
   }
 
-  _trigger(lane, velocity = 1) {
+  _trigger(lane, velocity = 1, time) {
     const i = Math.max(0, Math.min(this._slots.length - 1, lane));
     const s = this._slots[i];
+  if (s.muted) return;
     const ctx = this.audioCtx;
     const src = ctx.createBufferSource();
     src.buffer = s.buffer || s.fallback;
+  // Apply per-lane pitch in semitones
+  const pitchSemi = Number.isFinite(s.pitch) ? s.pitch : 0;
+  const rate = Math.pow(2, pitchSemi / 12);
+  src.playbackRate.value = Math.max(0.01, rate);
     const vGain = ctx.createGain();
-    vGain.gain.value = Math.max(0, s.vol) * Math.max(0, velocity);
+    const amp = Math.max(0, s.vol) * Math.max(0, velocity);
+    // Set gain at event time for tighter sync
+    if (typeof time === 'number') {
+      vGain.gain.setValueAtTime(amp, time);
+    } else {
+      vGain.gain.value = amp;
+    }
     src.connect(vGain).connect(s.gain);
-    try { src.start(); } catch {}
+    try { typeof time === 'number' ? src.start(time) : src.start(); } catch {}
   }
 
   _stopAll() {
@@ -236,7 +273,7 @@ export class DrumStationModule extends Module {
       pattern: this._pattern,
       accent: this._accent,
       master: this._out.gain.value,
-      slots: this._slots.map(s => ({ vol: s.vol, pan: s.panVal, hasSample: !!s.buffer })),
+  slots: this._slots.map(s => ({ vol: s.vol, pan: s.panVal, pitch: s.pitch||0, mute: !!s.muted, hasSample: !!s.buffer })),
     };
   }
   fromJSON(state) {
@@ -247,7 +284,25 @@ export class DrumStationModule extends Module {
     if (Array.isArray(state.accent)) this._accent = state.accent.map(r => r.slice(0, this._steps));
     if (typeof state.master==='number') this._out.gain.value = state.master;
     if (Array.isArray(state.slots)) {
-      state.slots.forEach((ss, i) => { const s = this._slots[i]; if (!s) return; if (typeof ss.vol==='number') { s.vol = ss.vol; s.gain.gain.value = ss.vol; } if (typeof ss.pan==='number' && s.pan) { s.panVal = ss.pan; s.pan.pan.value = ss.pan; } });
+      state.slots.forEach((ss, i) => {
+        const s = this._slots[i]; if (!s) return;
+        if (typeof ss.vol==='number') { s.vol = ss.vol; }
+        if (typeof ss.pan==='number' && s.pan) { s.panVal = ss.pan; s.pan.pan.value = ss.pan; }
+        if (typeof ss.pitch==='number') { s.pitch = ss.pitch; }
+        if (typeof ss.mute==='boolean') { s.muted = ss.mute; }
+        s.gain.gain.value = s.muted ? 0 : Math.max(0, s.vol);
+        // Sync UI sliders if available
+        const row = this._slotRows?.[i];
+        if (row) {
+          const volEl = row.querySelector('[data-role=vol]');
+          const panEl = row.querySelector('[data-role=pan]');
+          const pitchEl = row.querySelector('[data-role=pitch]');
+          if (volEl) volEl.value = String(s.vol);
+          if (panEl) panEl.value = String(s.panVal);
+          if (pitchEl) pitchEl.value = String(s.pitch||0);
+          const muteEl = row.querySelector('[data-role=mute]'); if (muteEl) muteEl.checked = !!s.muted;
+        }
+      });
     }
     this._renderGrid();
   }

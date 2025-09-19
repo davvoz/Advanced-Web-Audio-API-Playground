@@ -3,8 +3,8 @@ import { Module } from './module.js';
 // Reasonable upper bound to keep UI responsive; can be raised if needed
 const MAX_STEPS = 128;
 
-const NOTE_NAMES = ['C','C#','D','D#','E','F','F#','G','G#','A','A#','B'];
-const clamp = (v,a,b) => Math.max(a, Math.min(b, v));
+const NOTE_NAMES = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'];
+const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
 const midiToHz = (m) => 440 * Math.pow(2, (m - 69) / 12);
 const midiToName = (m) => {
   const idx = ((m % 12) + 12) % 12;
@@ -20,7 +20,7 @@ const noteNameToMidi = (name) => {
   return (oct + 1) * 12 + idx; // MIDI standard: C-1 = 0
 };
 
-function buildNoteOptions(fromOct=2, toOct=6, defaultMidi=60) {
+function buildNoteOptions(fromOct = 2, toOct = 6, defaultMidi = 60) {
   const opts = [];
   for (let o = fromOct; o <= toOct; o++) {
     for (let i = 0; i < 12; i++) {
@@ -59,30 +59,33 @@ export class SequencerModule extends Module {
       run: { param: this._inRun.gain },
     };
 
-  // State
-  this.isRunning = true; // always follow external clock
-  this.bpm = 120; // used only for gate length math if no external bpm ref
+    // State
+    this.isRunning = true; // always follow external clock
+    this.bpm = 120; // used only for gate length math if no external bpm ref
     this.steps = 8;
     this.gateLen = 0.5; // 50% of step length
     this.pattern = Array.from({ length: this.steps }, (_, i) => ({ on: i % 2 === 0, midi: 48 }));
     this._timer = null;
-  this._stepIndex = 0;
-  this._transportRef = null;
-  this._gateSubs = new Map(); // id -> cb(state: 'on'|'off')
-  this._pitchSubs = new Map(); // id -> cb(hz, active)
+    this._stepIndex = 0;
+    this._transportRef = null;
+    this._gateSubs = new Map(); // id -> cb(state: 'on'|'off')
+    this._pitchSubs = new Map(); // id -> cb(hz, active)
   }
 
   buildControls(container) {
-  this.root.classList.add('module-sequencer');
-  // No internal transport or tempo; Sequencer follows external Transport
+    this.root.classList.add('module-sequencer');
+    // No internal transport or tempo; Sequencer follows external Transport
 
     // Steps and gate
     const stepsCtl = document.createElement('div');
     stepsCtl.className = 'control';
-  stepsCtl.innerHTML = `
+    stepsCtl.innerHTML = `
       <label style="display:flex;align-items:center;justify-content:space-between;gap:8px;">
         <span>Steps / Gate</span>
-        <button class="btn" data-role="expand">Expand</button>
+        <div style="display:inline-flex;gap:6px;">
+          <button class="btn" data-role="dup">Duplicate</button>
+          <button class="btn" data-role="expand">Expand</button>
+        </div>
       </label>
       <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;">
     <div><small>Steps</small><input type="number" min="1" max="${MAX_STEPS}" step="1" value="${this.steps}" /></div>
@@ -91,16 +94,19 @@ export class SequencerModule extends Module {
     `;
     const stepsNum = stepsCtl.querySelector('input[type=number]');
     const gateRange = stepsCtl.querySelector('input[type=range]');
-  // sync UI with current state
-  stepsNum.value = String(this.steps);
-  gateRange.value = String(this.gateLen);
-  this._stepsNum = stepsNum;
-  this._gateRange = gateRange;
+    // sync UI with current state
+    stepsNum.value = String(this.steps);
+    gateRange.value = String(this.gateLen);
+    this._stepsNum = stepsNum;
+    this._gateRange = gateRange;
     stepsNum.addEventListener('input', () => this.setSteps(Number(stepsNum.value)));
     gateRange.addEventListener('input', () => this.gateLen = Number(gateRange.value));
 
-  // Fullscreen editor button
-  stepsCtl.querySelector('[data-role=expand]')?.addEventListener('click', () => this._openFullscreenEditor());
+    // Duplicate and Fullscreen editor buttons
+    stepsCtl.querySelector('[data-role=dup]')?.addEventListener('click', () => {
+      this._duplicatePattern();
+    });
+    stepsCtl.querySelector('[data-role=expand]')?.addEventListener('click', () => this._openFullscreenEditor());
 
     // Pattern grid
     const grid = document.createElement('div');
@@ -150,6 +156,7 @@ export class SequencerModule extends Module {
           <button class="btn" data-role="fs-oct-down">Oct -1</button>
           <button class="btn" data-role="fs-oct-up">Oct +1</button>
           <button class="btn" data-role="fs-random">Random</button>
+      <button class="btn" data-role="fs-dup">Duplicate</button>
         </div>
         <div style="display:flex;align-items:center;gap:6px;">
           <small>View</small>
@@ -161,43 +168,45 @@ export class SequencerModule extends Module {
       </div>
     `;
     const gridWrap = document.createElement('div');
-  gridWrap.className = 'control';
-  gridWrap.innerHTML = `<div class="seq-grid-wrap"><div class="seq-grid" data-role="fs-grid"></div></div>`;
+    gridWrap.className = 'control';
+    gridWrap.innerHTML = `<div class="seq-grid-wrap"><div class="seq-grid" data-role="fs-grid"></div></div>`;
     const fsGrid = gridWrap.querySelector('[data-role=fs-grid]');
 
     content.appendChild(controls);
     content.appendChild(gridWrap);
     backdrop.appendChild(panel);
     document.body.appendChild(backdrop);
-  const onClose = () => closeModal();
-  panel.querySelector('[data-role=close]')?.addEventListener('click', onClose);
-  backdrop.addEventListener('click', (e) => { if (e.target === backdrop) onClose(); });
-  const escHandler = (e) => { if (e.key === 'Escape') { onClose(); document.removeEventListener('keydown', escHandler); } };
-  document.addEventListener('keydown', escHandler);
+    const onClose = () => closeModal();
+    panel.querySelector('[data-role=close]')?.addEventListener('click', onClose);
+    backdrop.addEventListener('click', (e) => { if (e.target === backdrop) onClose(); });
+    const escHandler = (e) => { if (e.key === 'Escape') { onClose(); document.removeEventListener('keydown', escHandler); } };
+    document.addEventListener('keydown', escHandler);
 
     // Bind fullscreen controls
     const fsSteps = controls.querySelector('[data-role=fs-steps]');
     const fsGate = controls.querySelector('[data-role=fs-gate]');
     const fsClear = controls.querySelector('[data-role=fs-clear]');
-  const fsShiftL = controls.querySelector('[data-role=fs-shift-left]');
-  const fsShiftR = controls.querySelector('[data-role=fs-shift-right]');
-  const fsTrDn = controls.querySelector('[data-role=fs-tr-down]');
-  const fsTrUp = controls.querySelector('[data-role=fs-tr-up]');
-  const fsOctDn = controls.querySelector('[data-role=fs-oct-down]');
-  const fsOctUp = controls.querySelector('[data-role=fs-oct-up]');
-  const fsRandom = controls.querySelector('[data-role=fs-random]');
+    const fsShiftL = controls.querySelector('[data-role=fs-shift-left]');
+    const fsShiftR = controls.querySelector('[data-role=fs-shift-right]');
+    const fsTrDn = controls.querySelector('[data-role=fs-tr-down]');
+    const fsTrUp = controls.querySelector('[data-role=fs-tr-up]');
+    const fsOctDn = controls.querySelector('[data-role=fs-oct-down]');
+    const fsOctUp = controls.querySelector('[data-role=fs-oct-up]');
+    const fsRandom = controls.querySelector('[data-role=fs-random]');
+    const fsDup = controls.querySelector('[data-role=fs-dup]');
     const viewClassic = controls.querySelector('[data-role=view-classic]');
     const viewQuick = controls.querySelector('[data-role=view-quick]');
     fsSteps.addEventListener('input', () => this.setSteps(Number(fsSteps.value)));
     fsGate.addEventListener('input', () => this.gateLen = Number(fsGate.value));
-  fsClear.addEventListener('click', () => { this.pattern.forEach(p => { p.on = false; }); this._renderGridInto(fsGrid); });
-  fsShiftL.addEventListener('click', () => { this.pattern.push(this.pattern.shift()); this._renderGridInto(fsGrid); });
-  fsShiftR.addEventListener('click', () => { this.pattern.unshift(this.pattern.pop()); this._renderGridInto(fsGrid); });
-  fsTrDn.addEventListener('click', () => { this.pattern.forEach(p => p.midi = clamp(p.midi - 1, 0, 108)); this._renderGridInto(fsGrid); });
-  fsTrUp.addEventListener('click', () => { this.pattern.forEach(p => p.midi = clamp(p.midi + 1, 0, 108)); this._renderGridInto(fsGrid); });
-  fsOctDn.addEventListener('click', () => { this.pattern.forEach(p => p.midi = clamp(p.midi - 12, 0, 108)); this._renderGridInto(fsGrid); });
-  fsOctUp.addEventListener('click', () => { this.pattern.forEach(p => p.midi = clamp(p.midi + 12, 0, 108)); this._renderGridInto(fsGrid); });
-  fsRandom.addEventListener('click', () => { this.pattern.forEach(p => { p.on = Math.random() < 0.6; p.midi = clamp(36 + Math.floor(Math.random()*36), 0, 108); }); this._renderGridInto(fsGrid); });
+    fsClear.addEventListener('click', () => { this.pattern.forEach(p => { p.on = false; }); this._renderGridInto(fsGrid); });
+    fsShiftL.addEventListener('click', () => { this.pattern.push(this.pattern.shift()); this._renderGridInto(fsGrid); });
+    fsShiftR.addEventListener('click', () => { this.pattern.unshift(this.pattern.pop()); this._renderGridInto(fsGrid); });
+    fsTrDn.addEventListener('click', () => { this.pattern.forEach(p => p.midi = clamp(p.midi - 1, 0, 108)); this._renderGridInto(fsGrid); });
+    fsTrUp.addEventListener('click', () => { this.pattern.forEach(p => p.midi = clamp(p.midi + 1, 0, 108)); this._renderGridInto(fsGrid); });
+    fsOctDn.addEventListener('click', () => { this.pattern.forEach(p => p.midi = clamp(p.midi - 12, 0, 108)); this._renderGridInto(fsGrid); });
+    fsOctUp.addEventListener('click', () => { this.pattern.forEach(p => p.midi = clamp(p.midi + 12, 0, 108)); this._renderGridInto(fsGrid); });
+    fsRandom.addEventListener('click', () => { this.pattern.forEach(p => { p.on = Math.random() < 0.6; p.midi = clamp(36 + Math.floor(Math.random() * 36), 0, 108); }); this._renderGridInto(fsGrid); });
+    fsDup.addEventListener('click', () => { this._duplicatePattern(); fsSteps.value = String(this.steps); this._renderGridInto(fsGrid); });
 
     // View toggle: default to Classic for clarity
     this._fsMode = 'classic';
@@ -257,10 +266,10 @@ export class SequencerModule extends Module {
       const play = cell.querySelector('[data-role=play]');
       onCb.addEventListener('input', () => this.pattern[i].on = onCb.checked);
       sel.addEventListener('input', () => this.pattern[i].midi = Number(sel.value));
-      semiDn.addEventListener('click', () => { this.pattern[i].midi = clamp((this.pattern[i].midi|0) - 1, 0, 108); sel.value = String(this.pattern[i].midi); });
-      semiUp.addEventListener('click', () => { this.pattern[i].midi = clamp((this.pattern[i].midi|0) + 1, 0, 108); sel.value = String(this.pattern[i].midi); });
-      octDn.addEventListener('click', () => { this.pattern[i].midi = clamp((this.pattern[i].midi|0) - 12, 0, 108); sel.value = String(this.pattern[i].midi); });
-      octUp.addEventListener('click', () => { this.pattern[i].midi = clamp((this.pattern[i].midi|0) + 12, 0, 108); sel.value = String(this.pattern[i].midi); });
+      semiDn.addEventListener('click', () => { this.pattern[i].midi = clamp((this.pattern[i].midi | 0) - 1, 0, 108); sel.value = String(this.pattern[i].midi); });
+      semiUp.addEventListener('click', () => { this.pattern[i].midi = clamp((this.pattern[i].midi | 0) + 1, 0, 108); sel.value = String(this.pattern[i].midi); });
+      octDn.addEventListener('click', () => { this.pattern[i].midi = clamp((this.pattern[i].midi | 0) - 12, 0, 108); sel.value = String(this.pattern[i].midi); });
+      octUp.addEventListener('click', () => { this.pattern[i].midi = clamp((this.pattern[i].midi | 0) + 12, 0, 108); sel.value = String(this.pattern[i].midi); });
       play.addEventListener('click', () => this._auditionMidi(this.pattern[i].midi));
       container.appendChild(cell);
     }
@@ -271,8 +280,8 @@ export class SequencerModule extends Module {
     container.style.gridTemplateColumns = `repeat(${this.steps}, 120px)`;
     container.innerHTML = '';
     let painting = null; // true/false or null
-    const setOn = (idx, val) => { if (!this.pattern[idx]) this.pattern[idx] = { on:false, midi:48 }; this.pattern[idx].on = val; };
-    const changeMidi = (idx, delta) => { const p = this.pattern[idx]; if (!p) return; p.midi = clamp((p.midi|0) + delta, 0, 108); };
+    const setOn = (idx, val) => { if (!this.pattern[idx]) this.pattern[idx] = { on: false, midi: 48 }; this.pattern[idx].on = val; };
+    const changeMidi = (idx, delta) => { const p = this.pattern[idx]; if (!p) return; p.midi = clamp((p.midi | 0) + delta, 0, 108); };
     for (let i = 0; i < this.steps; i++) {
       const cell = document.createElement('div');
       cell.className = 'seq-step';
@@ -281,7 +290,7 @@ export class SequencerModule extends Module {
       const noteLabel = midiToName(step.midi || 48);
       cell.innerHTML = `
         <div style="display:flex;align-items:center;justify-content:space-between;gap:6px;">
-          <small>${String(i + 1).padStart(2,'0')}</small>
+          <small>${String(i + 1).padStart(2, '0')}</small>
           <span data-role="on" style="font-size:10px;opacity:.85;">${step.on ? 'On' : 'Off'}</span>
         </div>
         <div data-role="note" style="margin-top:6px;background:#0b1235;border:1px solid #2a3468;border-radius:6px;padding:10px;text-align:center;font-weight:600;">${noteLabel}</div>
@@ -316,7 +325,7 @@ export class SequencerModule extends Module {
   }
 
   _auditionMidi(midi, dur = 0.2) {
-    const hz = midiToHz(midi|0);
+    const hz = midiToHz(midi | 0);
     const osc = this.audioCtx.createOscillator();
     const g = this.audioCtx.createGain();
     g.gain.value = 0.0001;
@@ -328,15 +337,15 @@ export class SequencerModule extends Module {
     g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
     osc.start();
     osc.stop(t + dur + 0.02);
-    setTimeout(() => { try { osc.disconnect(); g.disconnect(); } catch {} }, (dur + 0.05) * 1000);
+    setTimeout(() => { try { osc.disconnect(); g.disconnect(); } catch { } }, (dur + 0.05) * 1000);
   }
 
   _renderGrid() {
     // Expand selectable range to go lower (C-1 .. B6)
-    const { opts } = buildNoteOptions(-1,6,48);
-  if (!this.gridBody) return;
-  // scale step width: ensure readability, use CSS var and fixed min width per step
-  this.gridBody.parentElement.parentElement.style.setProperty('--seq-steps', this.steps);
+    const { opts } = buildNoteOptions(-1, 6, 48);
+    if (!this.gridBody) return;
+    // scale step width: ensure readability, use CSS var and fixed min width per step
+    this.gridBody.parentElement.parentElement.style.setProperty('--seq-steps', this.steps);
     this.gridBody.style.gridTemplateColumns = `repeat(${this.steps}, 160px)`;
     this.gridBody.innerHTML = '';
     for (let i = 0; i < this.steps; i++) {
@@ -345,11 +354,11 @@ export class SequencerModule extends Module {
       const step = this.pattern[i] || { on: false, midi: 48 };
       cell.innerHTML = `
         <div style="display:flex;align-items:center;justify-content:space-between;gap:6px;">
-          <small>Step ${i+1}</small>
-          <label style="display:flex;align-items:center;gap:6px;font-size:11px;"><input type="checkbox" ${step.on?'checked':''}/> On</label>
+          <small>Step ${i + 1}</small>
+          <label style="display:flex;align-items:center;gap:6px;font-size:11px;"><input type="checkbox" ${step.on ? 'checked' : ''}/> On</label>
         </div>
         <select style="width:100%;margin-top:6px;background:#0d1330;color:#e6e8f0;border:1px solid #2a3468;border-radius:4px;padding:4px">
-          ${opts.map(o => `<option value="${o.midi}" ${o.midi===step.midi?'selected':''}>${o.name}</option>`).join('')}
+          ${opts.map(o => `<option value="${o.midi}" ${o.midi === step.midi ? 'selected' : ''}>${o.name}</option>`).join('')}
         </select>
       `;
       const onCb = cell.querySelector('input[type=checkbox]');
@@ -361,7 +370,7 @@ export class SequencerModule extends Module {
   }
 
   setSteps(n) {
-    this.steps = Math.max(1, Math.min(MAX_STEPS, n|0));
+    this.steps = Math.max(1, Math.min(MAX_STEPS, n | 0));
     if (this.pattern.length < this.steps) {
       const add = Array.from({ length: this.steps - this.pattern.length }, () => ({ on: false, midi: 48 }));
       this.pattern = this.pattern.concat(add);
@@ -370,6 +379,20 @@ export class SequencerModule extends Module {
     }
     if (this._stepsNum) this._stepsNum.value = String(this.steps);
     this._renderGrid();
+  }
+
+  // Duplicate pattern to double length (up to MAX_STEPS)
+  _duplicatePattern() {
+    const cur = this.steps | 0;
+    if (!cur || cur <= 0) return;
+    if (cur >= MAX_STEPS) return; // already at max
+    const target = Math.min(MAX_STEPS, cur * 2);
+    // Ensure we have at least cur items
+    while (this.pattern.length < cur) this.pattern.push({ on: false, midi: 48 });
+    const src = this.pattern.slice(0, cur).map(p => ({ on: !!p.on, midi: Number.isFinite(p?.midi) ? (p.midi | 0) : 48 }));
+    const extra = src.slice(0, target - cur).map(p => ({ ...p }));
+    this.pattern = src.concat(extra);
+    this.setSteps(target);
   }
 
   start() { this._stepIndex = 0; }
@@ -388,6 +411,12 @@ export class SequencerModule extends Module {
       if (transport?.subscribeClock) {
         transport.subscribeClock(this.id, (evt) => {
           if (!this.isRunning) return;
+          if (evt && evt.reset) {
+            // jump to step 0 and clear highlights; don't schedule a note on reset tick
+            this._stepIndex = 0;
+            if (this.gridBody) this.gridBody.querySelectorAll('.seq-step').forEach(el => el.classList.remove('active'));
+            return;
+          }
           this._advanceOneStep(evt);
         });
         this._transportRef = transport;
@@ -436,15 +465,15 @@ export class SequencerModule extends Module {
       const nowCtx = this.audioCtx.currentTime;
       const delayOn = Math.max(0, (t - nowCtx) * 1000);
       const delayOff = Math.max(0, (t + gateDur - nowCtx) * 1000);
-      setTimeout(() => { this._gateSubs.forEach(cb => { try { cb('on'); } catch {} }); }, delayOn);
-      setTimeout(() => { this._gateSubs.forEach(cb => { try { cb('off'); } catch {} }); }, delayOff);
-      setTimeout(() => { this._pitchSubs.forEach(cb => { try { cb(hz, true); } catch {} }); }, delayOn);
+      setTimeout(() => { this._gateSubs.forEach(cb => { try { cb('on'); } catch { } }); }, delayOn);
+      setTimeout(() => { this._gateSubs.forEach(cb => { try { cb('off'); } catch { } }); }, delayOff);
+      setTimeout(() => { this._pitchSubs.forEach(cb => { try { cb(hz, true); } catch { } }); }, delayOn);
     } else {
       this.gate.offset.setValueAtTime(0, t);
       const nowCtx = this.audioCtx.currentTime;
       const delay = Math.max(0, (t - nowCtx) * 1000);
-      setTimeout(() => { this._gateSubs.forEach(cb => { try { cb('off'); } catch {} }); }, delay);
-      setTimeout(() => { this._pitchSubs.forEach(cb => { try { cb(this.pitch.offset.value, false); } catch {} }); }, delay);
+      setTimeout(() => { this._gateSubs.forEach(cb => { try { cb('off'); } catch { } }); }, delay);
+      setTimeout(() => { this._pitchSubs.forEach(cb => { try { cb(this.pitch.offset.value, false); } catch { } }); }, delay);
     }
     this._stepIndex++;
   }
@@ -463,19 +492,19 @@ export class SequencerModule extends Module {
   dispose() {
     super.dispose();
     this.stop();
-  try { this.pitch?.disconnect(); this.gate?.disconnect(); this._inClock?.disconnect(); this._inBpm?.disconnect(); this._inRun?.disconnect(); } catch {}
+    try { this.pitch?.disconnect(); this.gate?.disconnect(); this._inClock?.disconnect(); this._inBpm?.disconnect(); this._inRun?.disconnect(); } catch { }
   }
 
   toJSON() {
-  return { steps: this.steps, gateLen: this.gateLen, pattern: this.pattern };
+    return { steps: this.steps, gateLen: this.gateLen, pattern: this.pattern };
   }
   fromJSON(state) {
     if (!state) return;
     if (typeof state.steps === 'number') this.setSteps(state.steps);
     if (typeof state.gateLen === 'number') this.gateLen = state.gateLen;
-    if (Array.isArray(state.pattern)) this.pattern = state.pattern.map(s => ({ on: !!s.on, midi: Number(s.midi)||48 }));
-  if (this._stepsNum) this._stepsNum.value = String(this.steps);
-  if (this._gateRange) this._gateRange.value = String(this.gateLen);
+    if (Array.isArray(state.pattern)) this.pattern = state.pattern.map(s => ({ on: !!s.on, midi: Number.isFinite(s?.midi) ? (s.midi | 0) : 48 }));
+    if (this._stepsNum) this._stepsNum.value = String(this.steps);
+    if (this._gateRange) this._gateRange.value = String(this.gateLen);
     if (this.gridBody) this._renderGrid();
   }
 }

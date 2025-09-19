@@ -136,13 +136,13 @@ export class SamplerModule extends Module {
     const startEl = playCtl.querySelector('[data-role=start]');
     const lstartEl = playCtl.querySelector('[data-role=lstart]');
     const lendEl = playCtl.querySelector('[data-role=lend]');
-    rateEl.addEventListener('input', () => this._rate = Number(rateEl.value));
+    rateEl.addEventListener('input', () => { this._rate = Number(rateEl.value); this._updatePlaybackRate(); });
     loopEl.addEventListener('change', () => this._loop = !!loopEl.checked);
     gainEl.addEventListener('input', () => this._out.gain.setTargetAtTime(Number(gainEl.value), this.audioCtx.currentTime, 0.01));
     modeEl.addEventListener('change', () => this._mode = modeEl.value);
-    tuneEl.addEventListener('input', () => this._tune = Number(tuneEl.value));
-    fineEl.addEventListener('input', () => this._fine = Number(fineEl.value));
-  rootEl.addEventListener('input', () => this._rootMidi = Math.max(0, Math.min(127, Number(rootEl.value)||0)));
+    tuneEl.addEventListener('input', () => { this._tune = Number(tuneEl.value); this._updatePlaybackRate(); });
+    fineEl.addEventListener('input', () => { this._fine = Number(fineEl.value); this._updatePlaybackRate(); });
+  rootEl.addEventListener('input', () => { this._rootMidi = Math.max(0, Math.min(127, Number(rootEl.value)||0)); this._updatePlaybackRate(); });
     startEl.addEventListener('input', () => this._startOffset = Math.max(0, Number(startEl.value)||0));
     lstartEl.addEventListener('input', () => this._loopStart = Math.max(0, Number(lstartEl.value)||0));
     lendEl.addEventListener('input', () => this._loopEnd = Math.max(0, Number(lendEl.value)||0));
@@ -241,11 +241,8 @@ export class SamplerModule extends Module {
     if (!this.buffer) return null;
     const src = this.audioCtx.createBufferSource();
     src.buffer = this.buffer;
-  // external pitch in Hz to semitone offset relative to root
-  const pitchSemi = (hz) => 12 * (Math.log(hz / 440) / Math.log(2)) + 69;
-  const rootHz = 440 * Math.pow(2, (this._rootMidi - 69) / 12);
-  const extSemi = this._pitchHz ? 12 * (Math.log(this._pitchHz / rootHz) / Math.log(2)) : 0;
-  const factor = Math.pow(2, ( (this._tune + extSemi) / 12)) * Math.pow(2, (this._fine / 1200));
+    // initial playback rate
+    const factor = this._computeRateFactor();
     src.playbackRate.value = Math.max(0.01, this._rate * factor);
     src.loop = !!this._loop;
     src.loopStart = Math.min(this._loopStart, Math.max(0, this.buffer.duration - 0.001));
@@ -253,6 +250,26 @@ export class SamplerModule extends Module {
     src.connect(this._vca);
     src.onended = () => { if (this._src === src) this._src = null; };
     return src;
+  }
+
+  _computeRateFactor() {
+    // Calculate transposition factor from external pitch, tune (st), and fine (cents)
+    const rootHz = 440 * Math.pow(2, (this._rootMidi - 69) / 12);
+    const extSemi = this._pitchHz && this._pitchHz > 0 ? 12 * (Math.log(this._pitchHz / rootHz) / Math.log(2)) : 0;
+    const semis = (this._tune + extSemi) / 12;
+    const cents = this._fine / 1200;
+    return Math.pow(2, semis) * Math.pow(2, cents);
+  }
+
+  _updatePlaybackRate() {
+    if (!this._src) return;
+    const now = this.audioCtx.currentTime;
+    const target = Math.max(0.01, this._rate * this._computeRateFactor());
+    try {
+      const pr = this._src.playbackRate;
+      pr.cancelScheduledValues(now);
+      pr.setTargetAtTime(target, now, 0.02);
+    } catch {}
   }
 
   trigger(offsetSec = 0) {
@@ -316,6 +333,8 @@ export class SamplerModule extends Module {
       if (src?.subscribePitch) {
         src.subscribePitch(this.id, (hz, active) => {
           this._pitchHz = typeof hz === 'number' && hz > 0 ? hz : null;
+          // live update playback rate when pitch changes
+          this._updatePlaybackRate();
         });
         this._pitchSrc = src;
       }

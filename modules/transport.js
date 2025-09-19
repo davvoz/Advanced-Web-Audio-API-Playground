@@ -38,12 +38,15 @@ export class TransportModule extends Module {
       <div style="display:flex;gap:6px;align-items:center;">
         <button class="btn" data-role="start">Start</button>
         <button class="btn" data-role="stop">Stop</button>
+    <button class="btn" data-role="reset" title="Reset time / resync">Reset</button>
       </div>
     `;
     const startBtn = transport.querySelector('[data-role=start]');
     const stopBtn = transport.querySelector('[data-role=stop]');
+  const resetBtn = transport.querySelector('[data-role=reset]');
     startBtn.addEventListener('click', () => this.start());
     stopBtn.addEventListener('click', () => this.stop());
+  resetBtn.addEventListener('click', () => this.reset());
 
     const tempoCtl = document.createElement('div');
     tempoCtl.className = 'control';
@@ -104,6 +107,19 @@ export class TransportModule extends Module {
     const now = this.audioCtx.currentTime;
     this.clock.offset.setTargetAtTime(0, now, 0.01);
     this.beat.offset.setTargetAtTime(0, now, 0.01);
+  }
+
+  reset() {
+    const now = this.audioCtx.currentTime;
+    // Reset internal counters
+    this._tickIndex = 0;
+    this._nextTickTime = this.running ? (now + 0.05) : now;
+    // Visual outputs to 0
+    this.clock.offset.setTargetAtTime(0, now, 0.005);
+    this.beat.offset.setTargetAtTime(0, now, 0.005);
+    // Notify subscribers immediately about reset
+    const evt = { time: now, bpm: this.bpm, ppqn: this.ppqn, tick: 0, reset: true };
+    this._subs.forEach(cb => { try { cb(evt); } catch {} });
   }
 
   subscribeClock(id, cb) { this._subs.set(id, cb); }
