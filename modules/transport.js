@@ -23,11 +23,16 @@ export class TransportModule extends Module {
 
   // Subscribers and scheduler
   this._subs = new Map(); // id -> (evt) => void
-  this._timerId = null;
+  this._animationId = null;
   this._nextTickTime = 0;
   this._tickIndex = 0;
-  this._lookaheadMs = 25;        // how often to check
   this._scheduleAheadSec = 0.1;  // how far ahead to schedule
+  this._lastScheduleTime = 0;    // track last schedule to avoid excessive calls
+  this._minScheduleInterval = 20; // minimum ms between schedule calls
+  
+  // UI throttling detection
+  this._isUIBusy = false;
+  this._uiBusyTimeout = null;
   }
 
   buildControls(container) {
@@ -67,6 +72,24 @@ export class TransportModule extends Module {
 
   _scheduler() {
     if (!this.running) return;
+    
+    const now = performance.now();
+    const timeSinceLastSchedule = now - this._lastScheduleTime;
+    
+    // Throttle scheduling during intensive UI interactions
+    if (this._isUIBusy && timeSinceLastSchedule < this._minScheduleInterval * 2) {
+      this._scheduleNext();
+      return;
+    }
+    
+    // Only schedule if enough time has passed (avoid excessive scheduling)
+    if (timeSinceLastSchedule < this._minScheduleInterval) {
+      this._scheduleNext();
+      return;
+    }
+    
+    this._lastScheduleTime = now;
+    
     const ctx = this.audioCtx;
     const spb = 60 / this.bpm;
     const secPerTick = spb / this.ppqn; // 16th
@@ -88,6 +111,25 @@ export class TransportModule extends Module {
       this._tickIndex += 1;
       this._nextTickTime += secPerTick;
     }
+    
+    this._scheduleNext();
+  }
+
+  _scheduleNext() {
+    if (this.running) {
+      this._animationId = requestAnimationFrame(() => this._scheduler());
+    }
+  }
+
+  _setUIBusy(busy) {
+    this._isUIBusy = busy;
+    if (this._uiBusyTimeout) clearTimeout(this._uiBusyTimeout);
+    if (busy) {
+      // Auto-clear UI busy flag after a short delay
+      this._uiBusyTimeout = setTimeout(() => {
+        this._isUIBusy = false;
+      }, 100);
+    }
   }
 
   start() {
@@ -96,14 +138,15 @@ export class TransportModule extends Module {
   const now = this.audioCtx.currentTime;
   this._tickIndex = 0;
   this._nextTickTime = now + 0.05; // slight offset to start
-  if (this._timerId) clearInterval(this._timerId);
-  this._timerId = setInterval(() => this._scheduler(), this._lookaheadMs);
+  this._lastScheduleTime = 0; // reset timing
+  if (this._animationId) cancelAnimationFrame(this._animationId);
+  this._scheduleNext();
   }
 
   stop() {
   this.running = false;
-  if (this._timerId) clearInterval(this._timerId);
-  this._timerId = null;
+  if (this._animationId) cancelAnimationFrame(this._animationId);
+  this._animationId = null;
     const now = this.audioCtx.currentTime;
     this.clock.offset.setTargetAtTime(0, now, 0.01);
     this.beat.offset.setTargetAtTime(0, now, 0.01);
@@ -124,6 +167,9 @@ export class TransportModule extends Module {
 
   subscribeClock(id, cb) { this._subs.set(id, cb); }
   unsubscribeClock(id) { this._subs.delete(id); }
+
+  // Public method to allow external notification of UI activity
+  setUIBusy(busy) { this._setUIBusy(busy); }
 
   toJSON() { return { bpm: this.bpm, running: this.running }; }
   fromJSON(state) {

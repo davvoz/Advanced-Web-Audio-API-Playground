@@ -14,6 +14,27 @@ const getAudio = () => {
     return audioCtx;
 };
 
+// UI Activity detection for transport throttling
+let uiActivityTimeout = null;
+function notifyUIActivity() {
+    // Find all Transport modules and mark them as UI busy
+    Object.values(modules).forEach(mod => {
+        if (mod.type === 'Transport' && mod.setUIBusy) {
+            mod.setUIBusy(true);
+        }
+    });
+    
+    // Clear any existing timeout and set a new one
+    if (uiActivityTimeout) clearTimeout(uiActivityTimeout);
+    uiActivityTimeout = setTimeout(() => {
+        Object.values(modules).forEach(mod => {
+            if (mod.type === 'Transport' && mod.setUIBusy) {
+                mod.setUIBusy(false);
+            }
+        });
+    }, 150); // Clear UI busy flag after 150ms of inactivity
+}
+
 // DOM
 const workspace = document.getElementById('workspace');
 const zoomLayer = document.getElementById('zoom-layer');
@@ -179,6 +200,7 @@ function cancelLinking() {
 }
 
 function onWorkspaceMouseMove(e) {
+    notifyUIActivity(); // Notify transport of UI activity
     if (!linking) return;
     updatePreviewCableToMouse(linking.fromPortEl, e);
 }
@@ -338,6 +360,11 @@ function deleteConnection(id) {
 }
 
 function updateConnectedCables(moduleId) {
+    // Notify UI activity during cable updates (especially during drag)
+    if (moduleId !== 'ALL') {
+        notifyUIActivity();
+    }
+    
     // Update cables containing this module; if moduleId === 'ALL', update all
     connections.forEach((c) => {
         if (moduleId !== 'ALL' && c.fromModuleId !== moduleId && c.toModuleId !== moduleId) return;
@@ -394,7 +421,16 @@ window.addEventListener('DOMContentLoaded', () => {
     };
     resize();
     window.addEventListener('resize', () => { resize(); updateConnectedCables('ALL'); });
-    workspace.addEventListener('scroll', () => updateConnectedCables('ALL'));
+    workspace.addEventListener('scroll', () => {
+        notifyUIActivity(); // Notify transport of UI activity during scroll
+        updateConnectedCables('ALL');
+    });
+    
+    // Add additional UI activity listeners
+    workspace.addEventListener('wheel', notifyUIActivity, { passive: true });
+    workspace.addEventListener('touchstart', notifyUIActivity, { passive: true });
+    workspace.addEventListener('touchmove', notifyUIActivity, { passive: true });
+    
     setZoom(1);
 
     // create demo
