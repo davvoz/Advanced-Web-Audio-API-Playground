@@ -65,8 +65,17 @@ export class SkinRuntime {
      * @private
      */
     async loadSkinModule(skinName) {
+        // Whitelist of allowed skins to prevent path traversal
+        const allowedSkins = ['default', 'reason-like'];
+        const normalizedName = skinName.toLowerCase().replace(/\s+/g, '-');
+        
+        if (!allowedSkins.includes(normalizedName)) {
+            console.error(`Skin not allowed: ${skinName}`);
+            return null;
+        }
+        
         try {
-            const module = await import(`../skins/${skinName.toLowerCase().replace(/\s+/g, '-')}/index.js`);
+            const module = await import(`../skins/${normalizedName}/index.js`);
             return module;
         } catch (err) {
             console.error(`Failed to load skin module ${skinName}:`, err);

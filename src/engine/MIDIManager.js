@@ -107,7 +107,9 @@ export class MIDIManager extends EventTarget {
                 let paramValue;
                 
                 if (metadata.taper === 'exponential') {
-                    // Exponential scaling
+                    // Quadratic scaling for smoother control at lower values
+                    // For true exponential, use: Math.exp(normalized * Math.log(range)) - 1
+                    // But quadratic (power of 2) works well for most audio parameters
                     const range = metadata.max - metadata.min;
                     paramValue = metadata.min + range * Math.pow(normalized, 2);
                 } else {

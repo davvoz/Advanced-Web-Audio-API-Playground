@@ -5,16 +5,12 @@
 import { AudioEngine } from './engine/AudioEngine.js';
 import { SkinRuntime } from './ui/SkinRuntime.js';
 
-// Load skin config
-const DefaultSkinConfig = await fetch('./src/skins/default/skin-config.json').then(r => r.json());
-
 // Simple id generator (legacy compatibility)
 let __id = 0;
 const uid = (p = 'id') => `${p}-${Date.now().toString(36)}-${(__id++).toString(36)}`;
 
 // Initialize engine
 const engine = new AudioEngine();
-engine.init();
 
 // Make engine globally accessible for legacy modules
 window.audioEngine = engine;
@@ -30,12 +26,9 @@ const presetFileInput = document.getElementById('preset-file');
 const speakerWarning = document.getElementById('speaker-warning');
 const warnDismissBtn = document.getElementById('warn-dismiss');
 
-// Initialize skin runtime with default skin
+// Initialize skin runtime
 const container = document.getElementById('workspace');
 const skinRuntime = new SkinRuntime(engine, container);
-
-// Load default skin
-await skinRuntime.loadSkin(DefaultSkinConfig);
 
 // Audio state control
 function setButtonRunning(running) {
@@ -167,9 +160,20 @@ presetFileInput?.addEventListener('change', async () => {
 warnDismissBtn?.addEventListener('click', () => speakerWarning?.remove());
 
 // Initialize
-window.addEventListener('DOMContentLoaded', () => {
+window.addEventListener('DOMContentLoaded', async () => {
     setButtonRunning(false);
     initPresets();
+    
+    // Load default skin
+    try {
+        const DefaultSkinConfig = await fetch('./src/skins/default/skin-config.json').then(r => r.json());
+        await skinRuntime.loadSkin(DefaultSkinConfig);
+    } catch (err) {
+        console.error('Failed to load skin:', err);
+    }
+    
+    // Initialize engine
+    await engine.init();
     
     // Create example patch
     createExamplePatch();

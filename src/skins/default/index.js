@@ -40,7 +40,6 @@ export default class DefaultSkin {
             this.workspace.addEventListener('dragover', (e) => e.preventDefault());
             this.workspace.addEventListener('drop', (e) => this.handleDrop(e));
             this.workspace.addEventListener('scroll', () => this.updateAllCables());
-            this.workspace.addEventListener('wheel', (e) => {}, { passive: true });
         }
 
         // Zoom controls

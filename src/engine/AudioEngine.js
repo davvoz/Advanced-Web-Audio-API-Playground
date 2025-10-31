@@ -373,10 +373,16 @@ export class AudioEngine extends EventTarget {
     /**
      * Register parameters for a module
      * @private
+     * TODO: Implement automatic parameter registration
+     * Each module should expose a getParameters() method that returns:
+     * {
+     *   parameterId: { min, max, default, unit, taper, smoothing }
+     * }
+     * This method would then register all module parameters with the registry
      */
     registerModuleParameters(moduleId, moduleInstance) {
-        // This is a placeholder for future parameter registration
-        // Each module would need to expose its parameters for registration
+        // Placeholder for future implementation
+        // Currently modules manage their own parameters
     }
 
     /**
