@@ -2,6 +2,8 @@
 
 A modular audio synthesis playground built with vanilla HTML/CSS/JavaScript and the Web Audio API. Create patches by dragging modules onto a canvas and connecting them with virtual cables.
 
+**✨ Now with refactored architecture!** The audio engine is fully separated from the UI, enabling multiple "skins" and better extensibility.
+
 ## Features
 
 - **Drag-and-drop interface**: Intuitive module patching on a zoomable canvas
@@ -10,6 +12,9 @@ A modular audio synthesis playground built with vanilla HTML/CSS/JavaScript and 
 - **Extensible module system**: Easy-to-extend base `Module` class for custom audio processors
 - **16 built-in presets**: Ready-to-use patches from simple oscillators to complex sequences
 - **Advanced UX**: Zoom (40%-200%), multiple cable deletion methods, module resizing
+- **🎹 MIDI Support**: Built-in MIDI input, learn mode, and CC mapping
+- **🎨 Multiple Skins**: Switch between different UI layouts (Default, Reason-like rack)
+- **🔧 Clean Architecture**: Separated audio engine and UI layers
 
 ## Available Modules
 
@@ -101,7 +106,19 @@ To use audio samples:
 
 ## Development
 
+### Architecture
+
+The project now uses a **layered architecture**:
+
+- **Engine Layer** (`src/engine/`): Audio graph management, independent of UI
+- **UI Layer** (`src/ui/`): Dynamic skin loading system
+- **Skins** (`src/skins/`): Different UI implementations (Default, Reason-like)
+- **Modules** (`modules/`): Audio processing modules
+
+See [Architecture Documentation](docs/ARCHITECTURE.md) and [API Reference](docs/API.md) for details.
+
 ### Adding Modules
+
 Create a new module by extending the base class:
 
 ```js
@@ -132,27 +149,29 @@ import { MyModule } from './mymodule.js';
 ```
 
 ### Project Structure
+
 ```
-├── index.html           # Main application layout
-├── style.css           # Styles for workspace and modules  
-├── main.js             # Canvas, connections, presets, zoom
-└── modules/
-    ├── index.js        # Module registry
-    ├── module.js       # Base Module class
-    ├── oscillator.js   # Waveform generators
-    ├── filter.js       # Audio filtering  
-    ├── gain.js         # Amplification
-    ├── delay.js        # Echo effects
-    ├── reverb.js       # Convolution reverb
-    ├── distortion.js   # Waveshaping
-    ├── mixer.js        # Multi-channel mixing
-    ├── destination.js  # Audio output
-    ├── lfo.js          # Modulation sources
-    ├── lfosync.js      # Tempo-synced modulation
-    ├── adsr.js         # Envelope generators
-    ├── sequencer.js    # Pattern sequencing
-    ├── transport.js    # Global timing
-    └── sampler.js      # Audio file playback
+├── src/
+│   ├── engine/              # Audio engine (backend)
+│   │   ├── AudioEngine.js   # Core audio graph manager
+│   │   ├── ParameterRegistry.js  # Parameter management
+│   │   └── MIDIManager.js   # MIDI support
+│   ├── ui/                  # UI layer
+│   │   └── SkinRuntime.js   # Dynamic skin loader
+│   ├── skins/               # UI implementations
+│   │   ├── default/         # Canvas-based UI
+│   │   └── reason-like/     # Rack-mounted UI
+│   ├── shared/              # Shared utilities
+│   └── app.js               # Application entry point
+├── modules/                 # Audio modules
+│   ├── index.js            # Module registry
+│   ├── module.js           # Base Module class
+│   └── ...                 # Individual modules
+├── docs/                    # Documentation
+│   ├── ARCHITECTURE.md     # Architecture guide
+│   └── API.md              # API reference
+├── index.html              # Main HTML
+└── style.css               # Styles
 ```
 
 ## Technical Notes

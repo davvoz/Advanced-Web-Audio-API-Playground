@@ -4,6 +4,7 @@
  * Independent of UI implementation
  */
 import { ParameterRegistry } from './ParameterRegistry.js';
+import { MIDIManager } from './MIDIManager.js';
 import { ModuleRegistry } from '../../modules/index.js';
 
 export class AudioEngine extends EventTarget {
@@ -13,6 +14,7 @@ export class AudioEngine extends EventTarget {
         this.modules = new Map(); // id -> module instance
         this.connections = new Map(); // id -> connection
         this.parameterRegistry = new ParameterRegistry();
+        this.midiManager = new MIDIManager(this.parameterRegistry);
         this.nextModuleId = 0;
         this.nextConnectionId = 0;
     }
@@ -20,11 +22,15 @@ export class AudioEngine extends EventTarget {
     /**
      * Initialize the audio engine
      */
-    init() {
+    async init() {
         if (!this.audioCtx) {
             const Ctx = window.AudioContext || window.webkitAudioContext;
             this.audioCtx = new Ctx();
         }
+        
+        // Initialize MIDI
+        await this.midiManager.init();
+        
         this.dispatchEvent(new CustomEvent('initialized', { detail: { state: this.audioCtx.state } }));
     }
 
@@ -371,5 +377,21 @@ export class AudioEngine extends EventTarget {
     registerModuleParameters(moduleId, moduleInstance) {
         // This is a placeholder for future parameter registration
         // Each module would need to expose its parameters for registration
+    }
+
+    /**
+     * Get MIDI manager
+     * @returns {MIDIManager}
+     */
+    getMIDIManager() {
+        return this.midiManager;
+    }
+
+    /**
+     * Get parameter registry
+     * @returns {ParameterRegistry}
+     */
+    getParameterRegistry() {
+        return this.parameterRegistry;
     }
 }
