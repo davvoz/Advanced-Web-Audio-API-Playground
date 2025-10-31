@@ -1,0 +1,21 @@
+{
+  "name": "Default",
+  "version": 1,
+  "layout": "canvas",
+  "theme": {
+    "primaryColor": "#333",
+    "accentColor": "#0a0",
+    "backgroundColor": "#0a0a0a",
+    "moduleBackground": "#222",
+    "portColorIn": "#0dd",
+    "portColorOut": "#fa0",
+    "cableColor": "#0a0",
+    "textColor": "#eee"
+  },
+  "features": {
+    "dragAndDrop": true,
+    "zoom": true,
+    "cables": true,
+    "presets": true
+  }
+}

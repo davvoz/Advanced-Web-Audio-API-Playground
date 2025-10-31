@@ -1,0 +1,29 @@
+{
+  "name": "Reason-like",
+  "version": 1,
+  "layout": "rack",
+  "theme": {
+    "primaryColor": "#2a2a2a",
+    "accentColor": "#ff6600",
+    "backgroundColor": "#1a1a1a",
+    "rackBackground": "#333",
+    "moduleBackground": "#444",
+    "panelColor": "#555",
+    "textColor": "#ddd",
+    "ledColorOn": "#0f0",
+    "ledColorOff": "#222"
+  },
+  "features": {
+    "dragAndDrop": false,
+    "zoom": false,
+    "cables": true,
+    "presets": true,
+    "rackMount": true
+  },
+  "rackConfig": {
+    "moduleWidth": 400,
+    "moduleHeight": 120,
+    "spacing": 10,
+    "showScrews": true
+  }
+}
